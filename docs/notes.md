@@ -40,3 +40,7 @@ obstacles" caught it.
   circles, the chosen loop (by circle index and direction) and the settings; it's validated field by field when
   read back, and bad entries are skipped. Loading puts the saved loop first if it isn't in the top six.
 - He's brainstorming and "having fun with it", so features over polish for now.
+- **Exhaust direction (11-25 evening):** each point adds a pipe term: 0 dB with the door behind the bike, -5 dB
+  straight ahead, +1 dB on the right (pipe side). Both numbers (`NOISE.spread`, `NOISE.side`) are estimates. To
+  replace them, measure the real bike with a phone meter at 25 ft: front, back, left, right, at a steady rev.
+- **Overlay:** the other top layouts draw as faint dashed lines under the selected one.

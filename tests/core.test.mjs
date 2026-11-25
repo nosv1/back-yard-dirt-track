@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  at, buildCircleTrack, circleProblems, closestPass, lapSim, neighbors, noiseAt, randomCircles, rng,
+  at, buildCircleTrack, circleProblems, closestPass, exhaustDb, NOISE, lapSim, neighbors, noiseAt, randomCircles, rng,
   samplesHitObstacle, solveCircles, tangent, weightedPeak,
 } from '../src/core.js';
 
@@ -85,4 +85,12 @@ test('random circles always fit, and most sets solve', () => {
     if (res.layouts.length > 0) { solved++; }
   }
   assert.ok(solved >= 20, 'at least 20 of 30 random sets have a loop (got ' + String(solved) + ')');
+});
+
+test('exhaust: loudest behind the bike, quietest ahead, a bit louder on the pipe side', () => {
+  const p = { x: 0, y: 0 }, q = { x: 0, y: 1 };
+  assert.equal(exhaustDb(p, q, { x: 0, y: -50 }), 0);
+  assert.equal(exhaustDb(p, q, { x: 0, y: 50 }), -NOISE.spread);
+  assert.ok(Math.abs(exhaustDb(p, q, { x: 50, y: 0 }) - (NOISE.side - NOISE.spread / 2)) < 1e-12, 'right side');
+  assert.ok(Math.abs(exhaustDb(p, q, { x: -50, y: 0 }) + NOISE.spread / 2) < 1e-12, 'left side');
 });

@@ -102,7 +102,9 @@ const G = 9.81;
 export const SIM = Object.freeze({ vcap: 40 * 0.44704, accel: 0.30 * G, quietAccel: 0.10 * G, brake: 0.45 * G,
   grip: 0.7, bermGrip: 1.0 });
 /** dB at 50 ft for braking, part throttle, full throttle (index = throttle state 0..2). */
-export const NOISE = Object.freeze({ ref: 50, levels: Object.freeze([-14, -7, 0]), minDist: 10 });
+/** spread: dB quieter straight in front of the bike than behind it (the pipe points back); side: dB extra on the
+ * pipe side (right). Estimates until the real bike is measured (11-25). */
+export const NOISE = Object.freeze({ ref: 50, levels: Object.freeze([-14, -7, 0]), minDist: 10, spread: 5, side: 1 });
 /** @type {readonly Group[]} */
 export const GROUPS = Object.freeze(['back', 'north', 'south']);
 /** How much each concern level counts: high as heard, some as if twice as far, none not at all. */
@@ -576,11 +578,26 @@ export function neighbors(gaps) {
 /** @param {Neighbor} nb @param {number} x @param {number} y */
 export function distTo(nb, x, y) { return Math.max(NOISE.minDist, Math.hypot(nb.x - x, nb.y - y)); }
 
+/**
+ * Exhaust direction, in dB: 0 with the door straight behind the bike, -spread straight ahead, up to +side on the
+ * right. The bike at p is heading toward q.
+ * @param {Pt} p @param {Pt} q @param {Pt} door
+ */
+export function exhaustDb(p, q, door) {
+  check(Number.isFinite(p.x) && Number.isFinite(q.x) && Number.isFinite(door.x), 'exhaust needs real points');
+  const hx = q.x - p.x, hy = q.y - p.y, dx = door.x - p.x, dy = door.y - p.y;
+  const n = Math.hypot(hx, hy) * Math.hypot(dx, dy);
+  if (n < 1e-9) { return 0; }
+  const ahead = (hx * dx + hy * dy) / n, right = (hy * dx - hx * dy) / n;
+  return -NOISE.spread * (1 + ahead) / 2 + NOISE.side * Math.max(0, right);
+}
+
 /** Peak and time-averaged level at one door. @param {Sample[]} samples @param {Sim} sim @param {Neighbor} nb */
 function levelAt(samples, sim, nb) {
   let peak = -Infinity, energy = 0, T = 0;
   samples.forEach((p, i) => {
-    const L = at(NOISE.levels, at(sim.thr, i)) - 20 * Math.log10(distTo(nb, p.x, p.y) / NOISE.ref);
+    const pipe = exhaustDb(p, at(samples, (i + 1) % samples.length), nb);
+    const L = at(NOISE.levels, at(sim.thr, i)) + pipe - 20 * Math.log10(distTo(nb, p.x, p.y) / NOISE.ref);
     const dt = (p.ds * FT) / Math.max(0.3, at(sim.v, i));
     peak = Math.max(peak, L);
     energy += dt * Math.pow(10, L / 10);

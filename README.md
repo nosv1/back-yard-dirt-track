@@ -46,7 +46,8 @@ braking, and the track is drawn in those colors. Past the "ease off" line near t
 throttle. Use the lap times to compare layouts, not as predictions.
 
 **Noise** is measured at each neighbor's door, compared with full throttle 50 ft away. It drops 6 dB each time
-the distance doubles. Each neighbor gets a care level, from "most careful" to "don't mind," and layouts are ranked
+the distance doubles. The pipe points back, so the bike is about 5 dB quieter in front than behind, and 1 dB louder
+on the pipe side (right). Those two numbers are estimates until the real bike is measured. Each neighbor gets a care level, from "most careful" to "don't mind," and layouts are ranked
 by the loudest neighbor after that.
 
 The yard is 164 × 282 ft, measured on a satellite map. The house, keep-outs, and neighbor positions come from the
