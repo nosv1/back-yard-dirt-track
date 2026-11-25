@@ -1902,7 +1902,11 @@ function wirePage() {
   mainCanvas.addEventListener('pointermove', guard(onPointerMove));
   mainCanvas.addEventListener('pointerup', guard(onPointerUp));
   mainCanvas.addEventListener('pointercancel', guard(onPointerCancel));
+  // Phone address bars change the height as you scroll; re-fit only when the width changes (rotation, window drag).
+  let sizedW = window.innerWidth;
   window.addEventListener('resize', () => {
+    if (window.innerWidth === sizedW) { return; }
+    sizedW = window.innerWidth;
     clearTimeout(state.resizeTimer);
     state.resizeTimer = setTimeout(() => { safely(() => { sizeMain(); renderAll(); }); }, 120);
   });
