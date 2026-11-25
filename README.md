@@ -8,10 +8,13 @@ with nothing to install, and it works on a phone.
 
 ## Using it
 
-The page opens on **Circles** with an example already solved.
+The page opens with an example already solved.
 
 - **Tap the yard** to drop a circle, and **drag** a circle to move it. Change the selected circle's size with the
   radius slider.
+- **Randomize** drops 4 to 7 random circles where they fit and solves them. Press it again for a new set.
+- **Saved layouts** keeps the circles, the loop you picked, and your settings. Saves live in the browser you made
+  them in, so a phone and a computer keep separate lists.
 - The **orange circle is the roundabout**. Every layout goes through it. You choose the direction: either way,
   counterclockwise, or clockwise.
 - The **six thumbnails** are the best ways to link the circles. Tap one to see it in full.
@@ -19,9 +22,6 @@ The page opens on **Circles** with an example already solved.
 
 The panel shows each layout's length, a simulated lap time, top speed, corners, hairpins, jumps, the closest point
 where two parts of the track pass each other, and how loud it is at each neighbor.
-
-**Grid** and **Draw** are the first version, which works on 20 ft squares. Draw lets you lay a few pieces and have
-the solver finish the loop, like the track tool in Roller Coaster Tycoon.
 
 ## How it works
 
@@ -65,8 +65,12 @@ npm run check      # build, lint, strict types, tests: what CI runs
 - [src/ui.js](src/ui.js): drawing and controls. [src/page.html](src/page.html): markup and styles.
 - [tools/build.mjs](tools/build.mjs) joins them into `index.html`, one self-contained page. **Edit `src/`, not
   `index.html`.** CI fails if `index.html` doesn't match the sources.
-- [tests/core.test.mjs](tests/core.test.mjs): checks the tangent math, the solver, the noise model, and both
-  "finish the loop" solvers.
+- [tests/core.test.mjs](tests/core.test.mjs): checks the tangent math, the solver, the noise model, and that
+  random circles always fit and usually solve.
+
+An earlier version also had Grid and Draw modes on 20 ft squares, including a "finish the loop" solver in the
+style of Roller Coaster Tycoon's track tool. They were removed on 2026-11-25 (Circles does the job better) and
+are in the git history.
 
 The code follows a NASA/JPL "Power of 10" coding standard, described in
 [CODING.md](https://github.com/nosv1/nosv1/blob/main/CODING.md): small functions, bounded loops, checked inputs,

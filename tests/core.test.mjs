@@ -2,9 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  NODES, at, blockedNodes, buildCircleTrack, buildTrack, circleProblems, closestPass, cornersFromLoop,
-  finishScenic, finishShortest, lapSim, makeBatch, neighbors, noiseAt, nodeXY, rng, samplesHitObstacle,
-  solveCircles, tangent, weightedPeak,
+  at, buildCircleTrack, circleProblems, closestPass, lapSim, neighbors, noiseAt, randomCircles, rng,
+  samplesHitObstacle, solveCircles, tangent, weightedPeak,
 } from '../src/core.js';
 
 const EXAMPLE = [
@@ -74,23 +73,16 @@ test('weightedPeak ignores neighbours he does not mind', () => {
   assert.equal(weightedPeak(nz, { back: 'none', north: 'none', south: 'none' }), -99);
 });
 
-test('grid batch tracks avoid obstacles', () => {
-  const batch = makeBatch({ seed: 2611, fill: 0.3, flow: 0.55, rmax: 20, width: 10 });
-  assert.ok(batch.length > 0);
-  for (const b of batch) { assert.ok(!samplesHitObstacle(buildTrack(b.corners, 20).samples, 10)); }
-});
-
-test('finish the loop: both solvers return closed loops that avoid blocked points', () => {
-  const blocked = blockedNodes(10);
-  const free = [];
-  for (let k = 0; k < NODES; k++) { if (at(blocked, k) === 0) { free.push(k); } }
-  const a = at(free, 40), draft = [a, a + 1];
-  for (const loop of [finishShortest(draft, rng(3), blocked), finishScenic(draft, rng(4), blocked)]) {
-    assert.ok(loop && loop.length >= 4);
-    assert.equal(new Set(loop).size, loop.length, 'no grid point used twice');
-    assert.ok(loop.every((k) => at(blocked, k) === 0));
-    assert.ok(cornersFromLoop(loop).length >= 4);
-    const first = nodeXY(at(loop, 0)), last = nodeXY(at(loop, loop.length - 1));
-    assert.ok(Math.hypot(first.x - last.x, first.y - last.y) < 22, 'last point is next to the first');
+test('random circles always fit, and most sets solve', () => {
+  const rand = rng(77);
+  let solved = 0;
+  for (let t = 0; t < 30; t++) {
+    const placed = randomCircles(rand, 10).map((c, i) => ({ ...c, id: i + 1, label: String(i) }));
+    assert.ok(placed.length >= 2 && placed.length <= 7, 'between 2 and 7 circles');
+    assert.deepEqual(circleProblems(placed, 1, 10).notes, [], 'clear of the fence, obstacles and each other');
+    const res = solveCircles(placed, 1, 10, { useAll: false, rank: 'both', nbs: neighbors(GAPS), quietFrom: 182,
+      hubDir: 'either', concerns: CONCERNS });
+    if (res.layouts.length > 0) { solved++; }
   }
+  assert.ok(solved >= 20, 'at least 20 of 30 random sets have a loop (got ' + String(solved) + ')');
 });

@@ -1,27 +1,26 @@
-// Backyard Track Lab page: drawing, page state and the controls. All the yard math lives in core.js.
+// Backyard Track Lab page: drawing, page state, saved layouts and the controls. The yard math lives in core.js.
 // Rule 5 here: a failed check throws, and guard() catches it at the event handler and shows it in the panel.
+// Data read back from browser storage is checked field by field; bad entries are skipped, not trusted.
 import {
-  ASPECT, BATCH, CANDIDATES, CONCERN_DB, GROUPS, HILL, HOUSE, INSET, LOT_L, LOT_W, MAX_CIRCLES, MAX_R, MIN_GRASS,
-  MIN_R, NI, NJ, NODES, NOISE, OBSTACLES, RANK_NAMES, SX, SY, TAU, at, blockedNodes, buildCircleTrack, buildTrack,
-  check, circleProblems, closestPass, cornersFromLoop, distTo, features, finishScenic, finishShortest,
-  fullThrottleShare, lapSim, lineNodes, makeBatch, neighbors, nodeXY, noiseAt, rng, solveCircles,
+  ASPECT, BATCH, CONCERN_DB, GROUPS, HILL, HOUSE, LOT_L, LOT_W, MAX_CIRCLES, MAX_R, MIN_GRASS, MIN_R, NOISE,
+  OBSTACLES, RANK_NAMES, TAU, at, buildCircleTrack, check, circleProblems, closestPass, distTo, features,
+  fullThrottleShare, lapSim, neighbors, noiseAt, quickLayout, randomCircles, rng, solveCircles,
 } from './core.js';
 
 /** @typedef {import('./core.js').Track} Track */
 /** @typedef {import('./core.js').Feat} Feat */
 /** @typedef {import('./core.js').Sim} Sim */
 /** @typedef {import('./core.js').Sample} Sample */
-/** @typedef {import('./core.js').Straight} Straight */
 /** @typedef {import('./core.js').Pt} Pt */
+/** @typedef {import('./core.js').Ring} Ring */
 /** @typedef {import('./core.js').Placed} Placed */
 /** @typedef {import('./core.js').Layout} Layout */
-/** @typedef {import('./core.js').GridLayout} GridLayout */
 /** @typedef {import('./core.js').Neighbor} Neighbor */
 /** @typedef {import('./core.js').Concerns} Concerns */
 /** @typedef {import('./core.js').Concern} Concern */
+/** @typedef {import('./core.js').Gaps} Gaps */
 /** @typedef {import('./core.js').Rank} Rank */
 /** @typedef {import('./core.js').HubDir} HubDir */
-/** @typedef {import('./core.js').Group} Group */
 /**
  * @typedef {{ bg: string, fg: string, muted: string, grass: string, grass2: string, dirt: string, edge: string,
  *   tape: string, bad: string, house: string, chalk: string, panel: string, loud: string, part: string,
@@ -29,13 +28,28 @@ import {
  */
 /** @typedef {{ ctx: CanvasRenderingContext2D, s: number, ox: number, oy: number, col: Palette }} Pen */
 /** @typedef {{ list: Placed[], hub: number, bad: Set<number>, sel: number, dir: number }} Rings */
-/** @typedef {{ nbs: Neighbor[], concerns: Concerns, gaps: { back: number, north: number, south: number }, quietFrom: number, noiseMap: boolean }} Overlay */
+/** @typedef {{ nbs: Neighbor[], concerns: Concerns, gaps: Gaps, quietFrom: number, noiseMap: boolean }} Overlay */
 /**
- * @typedef {{ thumb: boolean, width: number, track: Track | null, sim: Sim | null, draft: number[] | null,
- *   rings: Rings | null, nodes: boolean, overlay: Overlay | null }} YardOpts
+ * @typedef {{ thumb: boolean, width: number, track: Track | null, sim: Sim | null, rings: Rings | null,
+ *   overlay: Overlay | null }} YardOpts
  */
 /** @typedef {{ ox: number, oy: number, s: number }} Geo */
-/** @typedef {'circles' | 'gen' | 'draw'} Mode */
+/** @typedef {{ x: number, y: number, r: number }} CircleSpec */
+/**
+ * @typedef {{ width: number, hubDir: HubDir, rank: Rank, useAll: boolean, gaps: Gaps, concerns: Concerns,
+ *   quietDepth: number }} Settings
+ */
+/**
+ * A saved layout. Circles by position; hub and pick index into circles. pick is the chosen loop (null if none).
+ * @typedef {{ name: string, at: number, circles: CircleSpec[], hub: number, pick: { i: number, s: number }[] | null,
+ *   settings: Settings, len: number, time: number }} Saved
+ */
+/**
+ * @typedef {{ width: number, geo: Geo | null, circles: Placed[], nextId: number, hub: number, csel: number,
+ *   cpick: number, csol: Layout[], cbad: Set<number>, drag: { id: number, dx: number, dy: number } | null,
+ *   tap: { w: Pt, sx: number, sy: number } | null, useAll: boolean, rank: Rank, hubDir: HubDir, gaps: Gaps,
+ *   noiseMap: boolean, quietDepth: number, concerns: Concerns, resizeTimer: number }} UiState
+ */
 
 const MAIN_M = Object.freeze({ l: 34, r: 10, t: 40, b: 30 });
 const THUMB_M = Object.freeze({ l: 3, r: 3, t: 3, b: 3 });
@@ -43,30 +57,26 @@ const EXAMPLE = Object.freeze([
   { x: 72, y: 160, r: 30 }, { x: 118, y: 62, r: 20 }, { x: 35, y: 90, r: 20 },
   { x: 138, y: 140, r: 16 }, { x: 40, y: 235, r: 22 }, { x: 125, y: 240, r: 20 },
 ]);
+const SAVE_KEY = 'backyard-track-lab.saves.v1';
+const MAX_SAVES = 30;
+const RANDOM_TRIES = 12;
+/** @type {readonly Rank[]} */
+const RANKS = Object.freeze(['both', 'quiet', 'longest']);
+/** @type {readonly HubDir[]} */
+const HUB_DIRS = Object.freeze(['either', 'ccw', 'cw']);
+/** @type {readonly Concern[]} */
+const LEVELS = Object.freeze(['high', 'some', 'none']);
 
 /**
- * @typedef {{ mode: Mode, seed: number, flow: number, fill: number, width: number, rmax: number,
- *   reversed: boolean, batch: GridLayout[], sel: number, draft: number[], groups: number[], drawn: Pt[] | null,
- *   geo: Geo | null, circles: Placed[], nextId: number, hub: number, csel: number, cpick: number,
- *   csol: Layout[], cbad: Set<number>, drag: { id: number, dx: number, dy: number } | null,
- *   tap: { w: Pt, sx: number, sy: number } | null, useAll: boolean,
- *   rank: Rank, hubDir: HubDir, gaps: { back: number, north: number, south: number }, noiseMap: boolean,
- *   quietDepth: number, concerns: Concerns, resizeTimer: number }} UiState
- */
-
-/**
- * Everything the controls change, shared by the render and event functions (module state, rule 6).
- * Circles mode: circles, hub, cpick (selected), csol (solutions). Grid modes: batch and the drawn loop.
+ * Everything the controls change, shared by the render and event functions (module state, rule 6):
+ * the circles, the roundabout (hub), the selected circle (cpick), the solutions (csol) and the settings.
  * @type {UiState}
  */
 const state = {
-  mode: 'circles', seed: 2611, flow: 0.55, fill: 0.30, width: 10, rmax: 20, reversed: false,
-  batch: [], sel: 0, draft: [], groups: [], drawn: null, geo: null,
-  circles: [], nextId: 1, hub: 0, csel: 0, cpick: -1, csol: [], cbad: new Set(), drag: null, tap: null,
-  useAll: false, rank: 'both', hubDir: 'either',
+  width: 10, geo: null, circles: [], nextId: 1, hub: 0, csel: 0, cpick: -1, csol: [], cbad: new Set(),
+  drag: null, tap: null, useAll: false, rank: 'both', hubDir: 'either',
   gaps: { back: 45, north: 30, south: 75 }, noiseMap: true, quietDepth: 100,
-  concerns: { back: 'high', north: 'some', south: 'none' },
-  resizeTimer: 0,
+  concerns: { back: 'high', north: 'some', south: 'none' }, resizeTimer: 0,
 };
 
 /* ---------- DOM access with checks ---------- */
@@ -188,7 +198,7 @@ function chevron(pen, p, u, z) {
     { x: p.x - u.x * z + u.y * z, y: p.y - u.y * z - u.x * z }], false);
 }
 
-/** Grass, mow stripes and the fence. @param {Pen} pen */
+/** Grass and mow stripes. @param {Pen} pen */
 function drawGround(pen) {
   const { ctx, col, s } = pen;
   ctx.fillStyle = col.grass;
@@ -307,17 +317,6 @@ function drawLabels(pen, ov) {
   ctx.restore();
 }
 
-/** @param {Pen} pen */
-function drawNodes(pen) {
-  const { ctx, col } = pen;
-  ctx.fillStyle = col.fg; ctx.globalAlpha = 0.4;
-  for (let k = 0; k < NODES; k++) {
-    const p = nodeXY(k);
-    ctx.beginPath(); ctx.arc(px(pen, p.x), py(pen, p.y), 2, 0, TAU); ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-}
-
 /** Dirt, edges and berms. @param {Pen} pen @param {Track} tr @param {number} width */
 function drawTrackBody(pen, tr, width) {
   const { ctx, col, s } = pen;
@@ -366,7 +365,7 @@ function drawChevrons(pen, samples) {
   pen.ctx.globalAlpha = 1;
 }
 
-/** @param {Pen} pen @param {Feat} f @param {number} width @param {boolean} thumb */
+/** Jumps and the start gate. @param {Pen} pen @param {Feat} f @param {number} width @param {boolean} thumb */
 function drawMarks(pen, f, width, thumb) {
   const { ctx, col, s } = pen;
   ctx.fillStyle = col.tape;
@@ -436,19 +435,7 @@ function drawRingLabel(pen, c, rings) {
   ctx.fillText(String(Math.round(c.r)) + ' ft', px(pen, c.x), py(pen, c.y) + 12);
 }
 
-/** @param {Pen} pen @param {number[]} draft */
-function drawDraft(pen, draft) {
-  const { ctx, col } = pen;
-  ctx.strokeStyle = col.tape; ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  strokePath(pen, draft.map(nodeXY), false);
-  const a = nodeXY(at(draft, 0)), b = nodeXY(at(draft, draft.length - 1));
-  ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.arc(px(pen, a.x), py(pen, a.y), 8, 0, TAU); ctx.stroke();
-  ctx.fillStyle = col.tape;
-  ctx.beginPath(); ctx.arc(px(pen, b.x), py(pen, b.y), 5, 0, TAU); ctx.fill();
-}
-
-/** Draws the whole yard; returns where it landed for turning clicks into feet. @param {HTMLCanvasElement} canvas @param {YardOpts} opts @returns {Geo | null} */
+/** Draws the whole yard; returns where it landed, for turning taps into feet. @param {HTMLCanvasElement} canvas @param {YardOpts} opts @returns {Geo | null} */
 function drawYard(canvas, opts) {
   const pen = makePen(canvas, opts.thumb), ov = opts.overlay;
   if (!pen) { return null; }
@@ -458,32 +445,22 @@ function drawYard(canvas, opts) {
   drawFeatures(pen, opts.thumb);
   drawFence(pen);
   if (ov) { drawLabels(pen, ov); }
-  drawContent(pen, opts);
+  if (opts.track) { drawTrack(pen, opts.track, opts); }
+  if (opts.rings) { drawRings(pen, opts.rings, opts.thumb); }
   return { ox: pen.ox, oy: pen.oy, s: pen.s };
 }
 
-/** Grid points, track, draft and circles over the yard. @param {Pen} pen @param {YardOpts} opts */
-function drawContent(pen, opts) {
-  if (opts.nodes) { drawNodes(pen); }
-  if (opts.track) { drawTrack(pen, opts.track, opts); }
-  if (opts.draft && opts.draft.length > 0) { drawDraft(pen, opts.draft); }
-  if (opts.rings) { drawRings(pen, opts.rings, opts.thumb); }
-}
-
-/* ---------- page state helpers ---------- */
+/* ---------- circles and solving ---------- */
 
 function quietFrom() { return state.quietDepth > 0 ? LOT_L - state.quietDepth : Infinity; }
 function nbList() { return neighbors(state.gaps); }
-
-/** @param {Pt[]} corners */
-function orient(corners) { return state.reversed ? corners.slice().reverse() : corners; }
 
 function relabel() {
   let n = 1;
   for (const c of state.circles) { c.label = c.id === state.hub ? 'R' : String(n++); }
 }
 
-/** @param {readonly { x: number, y: number, r: number }[]} list */
+/** @param {readonly CircleSpec[]} list */
 function loadCircles(list) {
   check(list.length <= MAX_CIRCLES, 'too many circles');
   state.circles = list.map((c) => ({ id: state.nextId++, x: c.x, y: c.y, r: c.r, label: '' }));
@@ -505,6 +482,7 @@ function ringsOpts(selId, dir) {
   return { list: state.circles, hub: state.hub, bad: state.cbad, sel: selId, dir };
 }
 
+/** Solves the current circles into state.csol and returns the line describing the result. */
 function solveLine() {
   if (state.circles.length < 2) { return 'Place at least two circles and the solver will link them.'; }
   const probs = circleProblems(state.circles, state.hub, state.width);
@@ -519,29 +497,28 @@ function solveLine() {
     ', each with at least ' + String(MIN_GRASS) + ' ft of grass between sections.';
 }
 
-function solveNow() {
+/** Solves without drawing. */
+function resolve() {
   state.csol = [];
   state.csel = 0;
   state.cbad = new Set();
   el('solve-line').textContent = solveLine();
+}
+
+function solveNow() { resolve(); renderAll(); }
+
+/** Random circles until a set has at least one loop (bounded tries). */
+function randomize() {
+  const rand = rng((Math.random() * 4294967296) >>> 0);
+  for (let t = 0; t < RANDOM_TRIES; t++) {
+    loadCircles(randomCircles(rand, state.width));
+    resolve();
+    if (state.csol.length > 0) { msg('', false); renderAll(); return; }
+  }
+  msg(String(RANDOM_TRIES) + ' random sets in a row had no loop. Press Randomize again.', true);
   renderAll();
 }
 
-/** @returns {Track | null} */
-function currentTrack() {
-  if (state.mode === 'circles') {
-    const it = state.csol[state.csel];
-    return it ? buildCircleTrack(it.order) : null;
-  }
-  const item = state.batch[state.sel];
-  const corners = state.mode === 'gen' ? (item ? orient(item.corners) : null) : (state.drawn ? orient(state.drawn) : null);
-  return corners ? buildTrack(corners, state.rmax) : null;
-}
-
-/**
- * Fits the yard to the screen: as tall as most of the window (less on phones, so there's always page
- * outside the canvas to scroll by), and never wider than its column.
- */
 function sizeMain() {
   const narrow = window.innerWidth <= 760, padX = MAIN_M.l + MAIN_M.r, padY = MAIN_M.t + MAIN_M.b;
   // On phones the yard section is display: contents (no box), so measure the panel's column instead.
@@ -591,81 +568,226 @@ function renderSelBox() {
 }
 
 function renderMain() {
-  const drawing = state.mode === 'draw', circ = state.mode === 'circles';
-  const tr = circ && state.drag ? null : currentTrack();
+  const sol = state.drag ? undefined : state.csol[state.csel];
+  const tr = sol ? buildCircleTrack(sol.order) : null;
   const sim = tr ? lapSim(tr.samples, quietFrom()) : null;
   state.geo = drawYard(mainCanvas, { thumb: false, width: state.width, track: tr, sim,
-    draft: drawing && !state.drawn ? state.draft : null, rings: circ ? ringsOpts(state.cpick, hubDirShown()) : null,
-    nodes: drawing && !state.drawn, overlay: overlay() });
+    rings: ringsOpts(state.cpick, hubDirShown()), overlay: overlay() });
   setStats(tr, sim);
   renderSelBox();
 }
 
-/** @param {number} i @param {Track} tr @param {number} hubDir */
-function makeThumb(i, tr, hubDir) {
-  const circ = state.mode === 'circles';
+/** @param {number} i @param {Layout} sol */
+function makeThumb(i, sol) {
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'thumb'; b.id = 'thumb-' + String(i);
-  b.setAttribute('aria-pressed', String(circ ? i === state.csel : (state.mode === 'gen' && i === state.sel)));
+  b.setAttribute('aria-pressed', String(i === state.csel));
   const canvas = document.createElement('canvas'), name = document.createElement('b'), info = document.createElement('span');
   name.textContent = 'Layout ' + String.fromCharCode(65 + i);
   b.append(canvas, name, info);
-  b.addEventListener('click', guard(() => {
-    if (circ) { state.csel = i; renderAll(); } else { state.sel = i; setMode('gen'); }
-  }));
+  b.addEventListener('click', guard(() => { state.csel = i; renderAll(); }));
   el('thumbs').appendChild(b);
-  const sim = lapSim(tr.samples, quietFrom());
-  drawYard(canvas, { thumb: true, width: state.width, track: tr, sim, draft: null,
-    rings: circ ? ringsOpts(-1, hubDir) : null, nodes: false, overlay: null });
+  const tr = buildCircleTrack(sol.order), sim = lapSim(tr.samples, quietFrom());
+  drawYard(canvas, { thumb: true, width: state.width, track: tr, sim, rings: ringsOpts(-1, at(sol.order, 0).s),
+    overlay: null });
   info.textContent = ft(tr.length) + ' · ' + fmtTime(sim.time) + ' · back ' + dB(noiseAt(tr.samples, sim, nbList()).back.peak);
 }
 
 function renderThumbs() {
-  const circ = state.mode === 'circles', box = el('thumbs');
-  el('batch-title').textContent = circ ? 'Ways to connect these circles' : 'Six layouts from this grid batch';
+  const box = el('thumbs');
   box.textContent = '';
-  const count = circ ? state.csol.length : state.batch.length;
-  if (count === 0) {
+  if (state.csol.length === 0) {
     const p = document.createElement('p');
     p.className = 'empty';
-    p.textContent = circ ? 'No layouts yet. Place circles in the yard and the solver fills this in.' : 'No layouts in this batch.';
+    p.textContent = 'No layouts yet. Place circles in the yard, or press Randomize.';
     box.appendChild(p);
     return;
   }
-  for (let i = 0; i < count && i < BATCH; i++) { thumbFor(i, circ); }
-}
-
-/** @param {number} i @param {boolean} circ */
-function thumbFor(i, circ) {
-  const sol = state.csol[i], item = state.batch[i];
-  if (circ && sol) { makeThumb(i, buildCircleTrack(sol.order), at(sol.order, 0).s); }
-  if (!circ && item) { makeThumb(i, buildTrack(orient(item.corners), state.rmax), 0); }
+  state.csol.slice(0, BATCH).forEach((sol, i) => { makeThumb(i, sol); });
 }
 
 function renderAll() { renderMain(); renderThumbs(); }
 
-function regenerate() {
-  state.batch = makeBatch({ seed: state.seed, fill: state.fill, flow: state.flow, rmax: state.rmax, width: state.width });
-  state.sel = 0;
-  el('seed-line').textContent = 'Batch #' + String(state.seed) + ' · best ' + String(state.batch.length) + ' of ' +
-    String(CANDIDATES) + ' candidates';
+/* ---------- saved layouts (this browser only) ---------- */
+
+/** @param {unknown} v @returns {v is Record<string, unknown>} */
+function isObj(v) { return typeof v === 'object' && v !== null; }
+/** @param {unknown} v @returns {v is number} */
+function isNum(v) { return typeof v === 'number' && Number.isFinite(v); }
+
+/** @param {unknown} v @returns {v is CircleSpec} */
+function isCircle(v) { return isObj(v) && isNum(v.x) && isNum(v.y) && isNum(v.r) && v.r >= MIN_R && v.r <= MAX_R; }
+
+/** @param {unknown} v @returns {v is Gaps} */
+function isGaps(v) { return isObj(v) && isNum(v.back) && isNum(v.north) && isNum(v.south) && Math.min(v.back, v.north, v.south) > 0; }
+
+/** @param {unknown} v @returns {v is Concerns} */
+function isConcerns(v) { return isObj(v) && GROUPS.every((g) => LEVELS.some((l) => l === v[g])); }
+
+/** @param {unknown} v @returns {v is Settings} */
+function isSettings(v) {
+  if (!isObj(v) || !isNum(v.width) || !isNum(v.quietDepth) || typeof v.useAll !== 'boolean') { return false; }
+  const choices = RANKS.some((r) => r === v.rank) && HUB_DIRS.some((d) => d === v.hubDir);
+  return choices && isGaps(v.gaps) && isConcerns(v.concerns);
 }
 
-/** @param {Mode} mode */
-function setMode(mode) {
-  state.mode = mode;
-  el('tab-circles').setAttribute('aria-pressed', String(mode === 'circles'));
-  el('tab-gen').setAttribute('aria-pressed', String(mode === 'gen'));
-  el('tab-draw').setAttribute('aria-pressed', String(mode === 'draw'));
-  el('circle-controls').hidden = mode !== 'circles';
-  el('gen-controls').hidden = mode !== 'gen';
-  el('draw-controls').hidden = mode !== 'draw';
-  el('rmax-label').hidden = mode === 'circles';
-  mainCanvas.classList.toggle('drawing', mode === 'draw');
-  mainCanvas.classList.toggle('circles', mode === 'circles');
-  msg(mode === 'draw' && state.draft.length === 0 ? 'Click any grid point to start the track.' : '', false);
-  if (mode === 'gen' && state.batch.length === 0) { regenerate(); }
+/** @param {unknown} pick @param {number} n circles in the save */
+function isPick(pick, n) {
+  if (pick === null) { return true; }
+  const okItem = (/** @type {unknown} */ p) => isObj(p) && isNum(p.i) && Number.isInteger(p.i) && p.i >= 0 && p.i < n && (p.s === 1 || p.s === -1);
+  return Array.isArray(pick) && pick.length >= 2 && pick.every(okItem);
+}
+
+/** 2 to 7 valid circles, and a hub index inside them. @param {unknown} circles @param {unknown} hub */
+function isCircleSet(circles, hub) {
+  if (!Array.isArray(circles) || circles.length < 2 || circles.length > MAX_CIRCLES) { return false; }
+  return circles.every(isCircle) && isNum(hub) && Number.isInteger(hub) && hub >= 0 && hub < circles.length;
+}
+
+/** @param {unknown} v @returns {v is Saved} */
+function isSaved(v) {
+  if (!isObj(v) || typeof v.name !== 'string' || !isNum(v.at) || !isNum(v.len) || !isNum(v.time)) { return false; }
+  const n = Array.isArray(v.circles) ? v.circles.length : 0;
+  return isCircleSet(v.circles, v.hub) && isPick(v.pick, n) && isSettings(v.settings);
+}
+
+/** The stored text, or null when there is none or storage is blocked (private windows). */
+function storedText() {
+  try {
+    return localStorage.getItem(SAVE_KEY);
+  } catch (_e) {
+    return null;
+  }
+}
+
+/** @param {string} text @returns {unknown} the parsed value, or null if the text isn't JSON */
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch (_e) {
+    msg('Your saved layouts could not be read, so they were skipped.', true);
+    return null;
+  }
+}
+
+/** Saved layouts, newest first; anything malformed is skipped. @returns {Saved[]} */
+function readSaves() {
+  const text = storedText();
+  const data = text ? parseJson(text) : null;
+  return Array.isArray(data) ? data.filter(isSaved).slice(0, MAX_SAVES) : [];
+}
+
+/** @param {Saved[]} list @returns {boolean} whether it was stored */
+function writeSaves(list) {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(list.slice(0, MAX_SAVES)));
+    return true;
+  } catch (_e) {
+    msg("This browser won't store layouts (a private window, or storage is full).", true);
+    return false;
+  }
+}
+
+/** @returns {Settings} */
+function currentSettings() {
+  return { width: state.width, hubDir: state.hubDir, rank: state.rank, useAll: state.useAll,
+    gaps: { ...state.gaps }, concerns: { ...state.concerns }, quietDepth: state.quietDepth };
+}
+
+function saveCurrent() {
+  if (state.circles.length < 2) { msg('Place at least two circles before saving.', true); return; }
+  const sol = state.csol[state.csel], index = new Map(state.circles.map((c, i) => [c.id, i]));
+  const tr = sol ? buildCircleTrack(sol.order) : null;
+  const saves = readSaves();
+  const name = inputEl('save-name').value.trim().slice(0, 40) || 'Layout ' + String(saves.length + 1);
+  /** @type {Saved} */
+  const entry = { name, at: Date.now(), circles: state.circles.map((c) => ({ x: c.x, y: c.y, r: c.r })),
+    hub: index.get(state.hub) ?? 0, pick: sol ? sol.order.map((o) => ({ i: index.get(o.id) ?? 0, s: o.s })) : null,
+    settings: currentSettings(), len: tr ? tr.length : 0, time: tr ? lapSim(tr.samples, quietFrom()).time : 0 };
+  if (!writeSaves([entry, ...saves])) { return; }
+  inputEl('save-name').value = '';
+  msg('Saved "' + name + '".' + (saves.length >= MAX_SAVES ? ' The oldest save was dropped to make room.' : ''), false);
+  renderSaves();
+}
+
+/** @param {readonly Ring[]} order */
+function signature(order) { return order.map((o) => String(o.id) + (o.s > 0 ? '+' : '-')).join(','); }
+
+/** Selects the saved loop, adding it if it isn't in the top six. @param {{ i: number, s: number }[]} pick */
+function selectPick(pick) {
+  const order = pick.map((p) => { const c = at(state.circles, p.i); return { x: c.x, y: c.y, r: c.r, s: p.s, id: c.id }; });
+  const found = state.csol.findIndex((l) => signature(l.order) === signature(order));
+  if (found >= 0) { state.csel = found; return; }
+  const len = quickLayout(order, state.width);
+  if (len < 0) { msg('That saved loop no longer fits with the current settings, so the best ones are shown instead.', true); return; }
+  state.csol = [{ order, len, score: Infinity }, ...state.csol].slice(0, BATCH);
+  state.csel = 0;
+}
+
+/** @param {Settings} s */
+function applySettings(s) {
+  state.width = s.width; state.hubDir = s.hubDir; state.rank = s.rank; state.useAll = s.useAll;
+  state.gaps = { ...s.gaps }; state.concerns = { ...s.concerns }; state.quietDepth = s.quietDepth;
+  syncControls();
+}
+
+/** Puts the settings back into the form controls. */
+function syncControls() {
+  const sliders = [['width', state.width], ['back-gap', state.gaps.back], ['north-gap', state.gaps.north],
+    ['south-gap', state.gaps.south], ['quiet-depth', state.quietDepth]];
+  for (const [id, v] of sliders) {
+    inputEl(String(id)).value = String(v);
+    el(String(id) + '-out').textContent = id === 'quiet-depth' && v === 0 ? 'off' : String(v) + ' ft';
+  }
+  selectEl('rank').value = state.rank;
+  selectEl('hub-dir').value = state.hubDir;
+  for (const g of GROUPS) { selectEl('concern-' + g).value = state.concerns[g]; }
+  inputEl('use-all').checked = state.useAll;
+}
+
+/** @param {Saved} entry */
+function loadSaved(entry) {
+  applySettings(entry.settings);
+  loadCircles(entry.circles);
+  state.hub = at(state.circles, entry.hub).id;
+  state.cpick = state.hub;
+  relabel();
+  resolve();
+  msg('Loaded "' + entry.name + '".', false);
+  if (entry.pick) { selectPick(entry.pick); }
   renderAll();
+}
+
+/** @param {Saved} entry */
+function deleteSaved(entry) {
+  if (writeSaves(readSaves().filter((s) => s.at !== entry.at || s.name !== entry.name))) {
+    msg('Deleted "' + entry.name + '".', false);
+    renderSaves();
+  }
+}
+
+/** @param {Saved} entry */
+function saveRow(entry) {
+  const li = document.createElement('li'), load = document.createElement('button'), del = document.createElement('button');
+  const when = new Date(entry.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  load.type = 'button'; load.className = 'save-load';
+  const title = document.createElement('b'), info = document.createElement('span');
+  title.textContent = entry.name;
+  info.textContent = (entry.len ? ft(entry.len) + ' · ' + fmtTime(entry.time) + ' · ' : '') + when;
+  load.append(title, info);
+  load.addEventListener('click', guard(() => { loadSaved(entry); }));
+  del.type = 'button'; del.className = 'btn save-del'; del.textContent = 'Delete';
+  del.setAttribute('aria-label', 'Delete ' + entry.name);
+  del.addEventListener('click', guard(() => { deleteSaved(entry); }));
+  li.append(load, del);
+  return li;
+}
+
+function renderSaves() {
+  const list = el('saves'), saves = readSaves();
+  list.textContent = '';
+  el('saves-empty').hidden = saves.length > 0;
+  for (const s of saves) { list.appendChild(saveRow(s)); }
 }
 
 /* ---------- pointer input ---------- */
@@ -676,75 +798,6 @@ function toWorld(ev) {
   if (!g) { return null; }
   const rect = mainCanvas.getBoundingClientRect();
   return { x: (ev.clientX - rect.left - g.ox) / g.s, y: LOT_L - (ev.clientY - rect.top - g.oy) / g.s };
-}
-
-/** @param {MouseEvent} ev */
-function pickNode(ev) {
-  const w = toWorld(ev);
-  if (!w) { return -1; }
-  const i = Math.round((w.x - INSET) / SX), j = Math.round((w.y - INSET) / SY);
-  if (i < 0 || i >= NI || j < 0 || j >= NJ) { return -1; }
-  const p = nodeXY(j * NI + i);
-  return Math.hypot(p.x - w.x, p.y - w.y) <= 0.45 * SX ? j * NI + i : -1;
-}
-
-/** @param {number[] | null} loop @param {string} how */
-function closeWith(loop, how) {
-  if (!loop) { msg("The track boxed itself in, so there's no way back to the start. Undo a piece and try again.", true); return; }
-  state.groups.push(state.draft.length);
-  state.draft = loop;
-  state.drawn = cornersFromLoop(loop);
-  msg('Loop closed' + how + '. Undo to reopen it.', false);
-  renderMain();
-}
-
-/** Why a straight from the end of the draft to node can't be laid, or '' if it can. @param {number[]} seg @param {Uint8Array} blocked */
-function segmentProblem(seg, blocked) {
-  const d = state.draft, used = new Set(d);
-  for (let q = 0; q < seg.length; q++) {
-    const k = at(seg, q), closing = k === at(d, 0) && q === seg.length - 1;
-    if (used.has(k) && !closing) { return "That would run over track you've already laid."; }
-    if (at(blocked, k) === 1) { return 'That would run through the house, fire pit, or electrical box.'; }
-  }
-  return '';
-}
-
-/** @param {number} node */
-function extendDraft(node) {
-  const d = state.draft, end = at(d, d.length - 1);
-  if (node === end) { return; }
-  const seg = lineNodes(end, node);
-  if (!seg) { msg('Track runs along the grid. Click a point in the same row or column as the end of the track.', true); return; }
-  const problem = segmentProblem(seg, blockedNodes(state.width));
-  if (problem) { msg(problem, true); return; }
-  if (at(seg, seg.length - 1) === at(d, 0)) {
-    const loop = d.concat(seg.slice(0, -1));
-    if (loop.length < 4) { msg('That loop is too small to ride.', true); return; }
-    closeWith(loop, '');
-    return;
-  }
-  state.groups.push(d.length);
-  state.draft = d.concat(seg);
-  msg('', false);
-  renderMain();
-}
-
-/** @param {Event} ev */
-function onYardClick(ev) {
-  if (state.mode !== 'draw') { return; }
-  check(ev instanceof MouseEvent, 'expected a mouse event');
-  if (state.drawn) { msg('This loop is closed. Undo or Clear to change it.', false); return; }
-  const node = pickNode(ev);
-  if (node < 0) { return; }
-  if (at(blockedNodes(state.width), node) === 1) { msg('That point is too close to the house, fire pit, or electrical box.', true); return; }
-  if (state.draft.length === 0) {
-    state.groups.push(0);
-    state.draft = [node];
-    msg('Now click a point in the same row or column.', false);
-    renderMain();
-    return;
-  }
-  extendDraft(node);
 }
 
 /** The circle under w, or null. @param {Pt} w @returns {Placed | null} */
@@ -774,7 +827,6 @@ function addCircle(w) {
 
 /** Down on a circle starts a drag; down on grass waits to see if it's a tap. @param {Event} ev */
 function onPointerDown(ev) {
-  if (state.mode !== 'circles') { return; }
   check(ev instanceof PointerEvent, 'expected a pointer event');
   const w = toWorld(ev);
   if (!w || w.x < 0 || w.x > LOT_W || w.y < 0 || w.y > LOT_L) { return; }
@@ -790,7 +842,6 @@ function onPointerDown(ev) {
 
 /** @param {Event} ev */
 function onPointerMove(ev) {
-  if (state.mode !== 'circles') { return; }
   check(ev instanceof PointerEvent, 'expected a pointer event');
   const tap = state.tap;
   if (tap && Math.hypot(ev.clientX - tap.sx, ev.clientY - tap.sy) > 10) { state.tap = null; }
@@ -820,11 +871,11 @@ function onPointerCancel() {
 
 /* ---------- wiring ---------- */
 
-/** @param {string} id @param {(v: number) => void} set @param {(v: number) => string} label @param {() => void} done */
-function wireSlider(id, set, label, done) {
+/** @param {string} id @param {(v: number) => void} set @param {(v: number) => string} label */
+function wireSlider(id, set, label) {
   const input = inputEl(id), out = el(id + '-out');
   input.addEventListener('input', guard(() => { const v = Number(input.value); set(v); out.textContent = label(v); renderMain(); }));
-  input.addEventListener('change', guard(done));
+  input.addEventListener('change', guard(() => { state.drag = null; solveNow(); }));
 }
 
 /**
@@ -840,11 +891,9 @@ function wireSelect(id, allowed, set) {
     const v = allowed.find((a) => a === sel.value);
     check(v !== undefined, 'unexpected choice for #' + id + ': ' + sel.value);
     set(v);
-    resolveAll();
+    solveNow();
   }));
 }
-
-function resolveAll() { if (state.mode === 'circles') { solveNow(); } else { renderAll(); } }
 
 function wireCircles() {
   wireSlider('radius', (v) => {
@@ -853,78 +902,37 @@ function wireCircles() {
     c.r = Math.max(MIN_R, Math.min(MAX_R, v));
     state.cbad = circleProblems(state.circles, state.hub, state.width).bad;
     state.drag = { id: c.id, dx: 0, dy: 0 };
-  }, (v) => String(v) + ' ft', () => { state.drag = null; solveNow(); });
+  }, (v) => String(v) + ' ft');
   el('make-hub').addEventListener('click', guard(() => { state.hub = state.cpick; relabel(); solveNow(); }));
   el('del-circle').addEventListener('click', guard(() => {
     state.circles = state.circles.filter((c) => c.id !== state.cpick);
     if (state.hub === state.cpick) { state.hub = state.circles.length ? at(state.circles, 0).id : 0; }
     state.cpick = state.hub; relabel(); solveNow();
   }));
-  el('example').addEventListener('click', guard(() => { loadCircles(EXAMPLE); solveNow(); }));
+  el('randomize').addEventListener('click', guard(randomize));
+  el('example').addEventListener('click', guard(() => { loadCircles(EXAMPLE); msg('', false); solveNow(); }));
   el('clear-circles').addEventListener('click', guard(() => { state.circles = []; state.hub = 0; state.cpick = -1; solveNow(); }));
   inputEl('use-all').addEventListener('change', guard(() => { state.useAll = inputEl('use-all').checked; solveNow(); }));
-  wireSelect('rank', /** @type {Rank[]} */ (['both', 'quiet', 'longest']), (v) => { state.rank = v; });
-  wireSelect('hub-dir', /** @type {HubDir[]} */ (['either', 'ccw', 'cw']), (v) => { state.hubDir = v; });
-}
-
-function wireGrid() {
-  el('newbatch').addEventListener('click', guard(() => { state.seed++; regenerate(); renderAll(); }));
-  el('reverse').addEventListener('click', guard(() => { state.reversed = !state.reversed; renderAll(); }));
-  wireSlider('flow', (v) => { state.flow = v / 100; }, String, () => { regenerate(); renderAll(); });
-  wireSlider('fill', (v) => { state.fill = v / 100; }, (v) => String(v) + '%', () => { regenerate(); renderAll(); });
-  wireSlider('rmax', (v) => { state.rmax = v; }, (v) => String(v) + ' ft', renderAll);
-}
-
-/** @param {number[] | null} loop @param {string} how */
-function finishWith(loop, how) {
-  if (state.drawn) { msg('This loop is already closed.', false); return; }
-  closeWith(loop, how);
-}
-
-function draftReady() {
-  if (state.draft.length >= 2) { return true; }
-  msg('Lay at least one piece of track first.', true);
-  return false;
-}
-
-function wireDraw() {
-  const seed = () => rng((Math.random() * 4294967296) >>> 0);
-  el('finish-short').addEventListener('click', guard(() => {
-    if (draftReady()) { finishWith(finishShortest(state.draft, seed(), blockedNodes(state.width)), ' the shortest way'); }
-  }));
-  el('finish-scenic').addEventListener('click', guard(() => {
-    if (draftReady()) { finishWith(finishScenic(state.draft, seed(), blockedNodes(state.width)), ' the scenic way (press again for another)'); }
-  }));
-  el('undo').addEventListener('click', guard(() => {
-    const back = state.groups.pop();
-    if (back === undefined) { return; }
-    state.draft = state.draft.slice(0, back); state.drawn = null; msg('', false); renderMain();
-  }));
-  el('clear').addEventListener('click', guard(() => {
-    state.draft = []; state.groups = []; state.drawn = null;
-    msg('Click any grid point to start the track.', false); renderMain();
-  }));
+  wireSelect('rank', RANKS, (v) => { state.rank = v; });
+  wireSelect('hub-dir', HUB_DIRS, (v) => { state.hubDir = v; });
+  el('save').addEventListener('click', guard(saveCurrent));
 }
 
 function wireNoise() {
-  wireSlider('width', (v) => { state.width = v; }, (v) => String(v) + ' ft', resolveAll);
-  wireSlider('back-gap', (v) => { state.gaps.back = v; }, (v) => String(v) + ' ft', resolveAll);
-  wireSlider('north-gap', (v) => { state.gaps.north = v; }, (v) => String(v) + ' ft', resolveAll);
-  wireSlider('south-gap', (v) => { state.gaps.south = v; }, (v) => String(v) + ' ft', resolveAll);
-  wireSlider('quiet-depth', (v) => { state.quietDepth = v; }, (v) => (v ? String(v) + ' ft' : 'off'), resolveAll);
-  /** @type {Concern[]} */
-  const levels = ['high', 'some', 'none'];
-  wireSelect('concern-back', levels, (v) => { state.concerns.back = v; });
-  wireSelect('concern-north', levels, (v) => { state.concerns.north = v; });
-  wireSelect('concern-south', levels, (v) => { state.concerns.south = v; });
+  /** @param {number} v */
+  const feet = (v) => String(v) + ' ft';
+  wireSlider('width', (v) => { state.width = v; }, feet);
+  wireSlider('back-gap', (v) => { state.gaps.back = v; }, feet);
+  wireSlider('north-gap', (v) => { state.gaps.north = v; }, feet);
+  wireSlider('south-gap', (v) => { state.gaps.south = v; }, feet);
+  wireSlider('quiet-depth', (v) => { state.quietDepth = v; }, (v) => (v ? feet(v) : 'off'));
+  wireSelect('concern-back', LEVELS, (v) => { state.concerns.back = v; });
+  wireSelect('concern-north', LEVELS, (v) => { state.concerns.north = v; });
+  wireSelect('concern-south', LEVELS, (v) => { state.concerns.south = v; });
   inputEl('noise-map').addEventListener('change', guard(() => { state.noiseMap = inputEl('noise-map').checked; renderMain(); }));
 }
 
 function wirePage() {
-  el('tab-circles').addEventListener('click', guard(() => { setMode('circles'); }));
-  el('tab-gen').addEventListener('click', guard(() => { setMode('gen'); }));
-  el('tab-draw').addEventListener('click', guard(() => { setMode('draw'); }));
-  mainCanvas.addEventListener('click', guard(onYardClick));
   mainCanvas.addEventListener('pointerdown', guard(onPointerDown));
   mainCanvas.addEventListener('pointermove', guard(onPointerMove));
   mainCanvas.addEventListener('pointerup', guard(onPointerUp));
@@ -940,9 +948,9 @@ function wirePage() {
 }
 
 safely(() => {
-  wireCircles(); wireGrid(); wireDraw(); wireNoise(); wirePage();
+  wireCircles(); wireNoise(); wirePage();
   sizeMain();
   loadCircles(EXAMPLE);
-  setMode('circles');
   solveNow();
+  renderSaves();
 });

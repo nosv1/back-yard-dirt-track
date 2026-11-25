@@ -10,7 +10,7 @@
 /** @typedef {{ len: number, first: number, dir: Pt, sx: number, sy: number, mid: Pt }} Straight */
 /** @typedef {{ r: number, turn: 'L' | 'R', hair: boolean, lout: number }} Corner */
 /**
- * @typedef {{ kind: 'grid' | 'circles', cs: Corner[], samples: Sample[], straights: Straight[],
+ * @typedef {{ cs: Corner[], samples: Sample[], straights: Straight[],
  *   length: number }} Track
  */
 /** @typedef {{ x: number, y: number, r: number, s: number, id: number }} Ring  s: +1 counterclockwise, -1 clockwise */
@@ -39,8 +39,6 @@
  * @typedef {{ useAll: boolean, rank: Rank, nbs: Neighbor[], quietFrom: number, hubDir: HubDir,
  *   concerns: Concerns }} SolveOpts
  */
-/** @typedef {{ seed: number, fill: number, flow: number, rmax: number, width: number }} BatchOpts */
-/** @typedef {{ set: Uint8Array, corners: Pt[], score: number }} GridLayout */
 
 /* ---------- checks ---------- */
 
@@ -96,16 +94,7 @@ export const HILL = Object.freeze({ cx: 45, cy: 204, a: 89, b: 45, ang: 0.904 })
 /** Back neighbours' doors, in ft along the back fence from its left corner. */
 export const BACK_DOORS = Object.freeze([-49, 17, 91, 152, 220]);
 
-export const INSET = 10;
-export const C = Math.round((LOT_W - 2 * INSET) / 20);
-export const R = Math.round((LOT_L - 2 * INSET) / 20);
-export const SX = (LOT_W - 2 * INSET) / C;
-export const SY = (LOT_L - 2 * INSET) / R;
-export const NI = C + 1;
-export const NJ = R + 1;
-export const NODES = NI * NJ;
 export const TAU = Math.PI * 2;
-const STEP = Math.max(SX, SY);
 const FT = 0.3048;
 const G = 9.81;
 
@@ -119,15 +108,12 @@ export const GROUPS = Object.freeze(['back', 'north', 'south']);
 /** How much each concern level counts: high as heard, some as if twice as far, none not at all. */
 export const CONCERN_DB = Object.freeze({ high: 0, some: -6, none: null });
 export const RANK_NAMES = Object.freeze({ both: 'length and quiet', quiet: 'quiet', longest: 'length' });
-export const CANDIDATES = 220;
 export const BATCH = 6;
 export const MAX_CIRCLES = 7;
 export const MIN_GRASS = 6;
 export const FENCE = 5;
 export const MIN_R = 10;
 export const MAX_R = 50;
-const DFS_BUDGET = 800;
-const DFS_RESTARTS = 60;
 const CHECK_BUDGET = 400;
 const FOUND_CAP = 20000;
 const EVAL_BUDGET = 2500;
@@ -150,21 +136,6 @@ export function rng(seed) {
   };
 }
 
-/**
- * @template T
- * @param {T[]} arr
- * @param {() => number} rand
- * @returns {T[]}
- */
-export function shuffle(arr, rand) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    const t = at(arr, i);
-    arr[i] = at(arr, j);
-    arr[j] = t;
-  }
-  return arr;
-}
 
 /* ---------- obstacles ---------- */
 
@@ -202,223 +173,7 @@ function segHitsObstacle(t, width) {
   return false;
 }
 
-/* ---------- grid mode: the track runs around a shape grown on 20 ft squares ---------- */
-
-/** @param {Uint8Array} set @param {number} c @param {number} r */
-function cellAt(set, c, r) {
-  return (c >= 0 && c < C && r >= 0 && r < R) ? at(set, r * C + c) : 0;
-}
-
-/** True when two squares touch only at a corner, which would pinch the loop into a figure 8. @param {Uint8Array} set */
-function hasPinch(set) {
-  for (let r = 0; r < R - 1; r++) {
-    for (let c = 0; c < C - 1; c++) {
-      const diagA = cellAt(set, c, r) + cellAt(set, c + 1, r + 1);
-      const diagB = cellAt(set, c + 1, r) + cellAt(set, c, r + 1);
-      if ((diagA === 2 && diagB === 0) || (diagB === 2 && diagA === 0)) { return true; }
-    }
-  }
-  return false;
-}
-
-/**
- * Empty squares around padded square k that the outside flood hasn't reached yet (padded grid: one ring of
- * empty squares around the yard, so the flood can get around the shape).
- * @param {Uint8Array} set
- * @param {Uint8Array} seen
- * @param {number} k
- */
-function floodNext(set, seen, k) {
-  const W = C + 2, H = R + 2, x = k % W, y = (k - x) / W;
-  return [{ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 }]
-    .filter((p) => p.x >= 0 && p.y >= 0 && p.x < W && p.y < H)
-    .map((p) => p.y * W + p.x)
-    .filter((nk) => at(seen, nk) === 0 && cellAt(set, (nk % W) - 1, Math.floor(nk / W) - 1) === 0);
-}
-
-/** True when the shape encloses empty squares, so its edge would not be one loop. @param {Uint8Array} set */
-function hasHole(set) {
-  const W = C + 2, H = R + 2, seen = new Uint8Array(W * H), stack = [0];
-  seen[0] = 1;
-  let reached = 0;
-  for (let guard = 0; guard < W * H && stack.length > 0; guard++) {
-    const k = stack.pop();
-    if (k === undefined) { break; }
-    reached++;
-    for (const nk of floodNext(set, seen, k)) { seen[nk] = 1; stack.push(nk); }
-  }
-  return reached + set.reduce((n, v) => n + v, 0) !== W * H;
-}
-
-/** @param {Uint8Array} set @param {number} i */
-function tryAdd(set, i) {
-  set[i] = 1;
-  if (hasPinch(set) || hasHole(set)) { set[i] = 0; return false; }
-  return true;
-}
-
-/**
- * Squares whose edges pass too close to an obstacle for a track of this width (5 points per edge).
- * @param {number} width
- */
-export function blockedCells(width) {
-  const out = new Uint8Array(C * R);
-  for (let i = 0; i < C * R; i++) {
-    const x0 = INSET + (i % C) * SX, y0 = INSET + Math.floor(i / C) * SY;
-    let near = false;
-    for (let t = 0; t <= 4 && !near; t++) {
-      const f = t / 4;
-      const pts = [{ x: x0 + f * SX, y: y0 }, { x: x0 + f * SX, y: y0 + SY }, { x: x0, y: y0 + f * SY }, { x: x0 + SX, y: y0 + f * SY }];
-      near = pts.some((p) => obstacleDist(p.x, p.y) < width / 2 + 2);
-    }
-    out[i] = near ? 1 : 0;
-  }
-  return out;
-}
-
-/**
- * A one-square-wide strip from the back toward the house, with random jogs. It stops at the first blocked
- * square, so it never runs into an obstacle.
- * @param {() => number} rand
- * @param {number} flow
- * @param {Uint8Array} blocked
- */
-function makeSpine(rand, flow, blocked) {
-  const set = new Uint8Array(C * R);
-  let c = Math.floor(rand() * C);
-  const top = R - 1 - Math.floor(rand() * 2), bot = Math.floor(rand() * 2);
-  for (let r = top; r >= bot && at(blocked, r * C + c) === 0; r--) {
-    set[r * C + c] = 1;
-    const nc = c + (rand() < 0.5 ? -1 : 1);
-    const canJog = nc >= 0 && nc < C && at(blocked, r * C + nc) === 0;
-    if (r > bot && canJog && rand() < 0.35 - 0.25 * flow) { c = nc; set[r * C + c] = 1; }
-  }
-  return set;
-}
-
-/**
- * A random free square next to the shape, weighted toward squares with more filled neighbours.
- * @param {Uint8Array} set
- * @param {Uint8Array} blocked
- * @param {() => number} rand
- * @param {number} p
- */
-function pickFrontier(set, blocked, rand, p) {
-  /** @type {number[]} */
-  const cand = [];
-  /** @type {number[]} */
-  const weight = [];
-  let total = 0;
-  for (let i = 0; i < C * R; i++) {
-    const cc = i % C, rr = (i - cc) / C;
-    const nb = cellAt(set, cc + 1, rr) + cellAt(set, cc - 1, rr) + cellAt(set, cc, rr + 1) + cellAt(set, cc, rr - 1);
-    if (at(set, i) === 1 || at(blocked, i) === 1 || nb === 0) { continue; }
-    cand.push(i); weight.push(Math.pow(nb, p)); total += Math.pow(nb, p);
-  }
-  let x = rand() * total;
-  for (let k = 0; k < cand.length; k++) {
-    x -= at(weight, k);
-    if (x <= 0) { return at(cand, k); }
-  }
-  return cand.length ? at(cand, cand.length - 1) : -1;
-}
-
-/**
- * @param {() => number} rand
- * @param {number} fill
- * @param {number} flow
- * @param {Uint8Array} blocked squares the shape may not use (blockedCells)
- */
-export function growShape(rand, fill, flow, blocked) {
-  check(fill >= 0 && fill <= 1 && flow >= 0 && flow <= 1, 'fill and flow must be 0..1');
-  check(blocked.length === C * R, 'blocked must cover every square');
-  const set = makeSpine(rand, flow, blocked);
-  let count = set.reduce((n, v) => n + v, 0);
-  const target = count + Math.round(fill * (C * R - count));
-  const p = 0.5 + flow * 3;
-  for (let step = 0; step < C * R * 4 && count < target; step++) {
-    const pick = pickFrontier(set, blocked, rand, p);
-    if (pick < 0) { break; }
-    if (tryAdd(set, pick)) { count++; }
-  }
-  return set;
-}
-
-/** @param {number} i @param {number} j */
-function nodeKey(i, j) { return j * NI + i; }
-
-/** @param {number} k @returns {Pt} */
-export function nodeXY(k) {
-  check(k >= 0 && k < NODES, 'grid point out of range');
-  const i = k % NI, j = (k - i) / NI;
-  return { x: INSET + i * SX, y: INSET + j * SY };
-}
-
-/** Edges of one square that face empty squares, clockwise. @param {Uint8Array} set @param {number} c @param {number} r */
-function cellEdges(set, c, r) {
-  /** @type {{ a: number, b: number }[]} */
-  const out = [];
-  if (!cellAt(set, c, r - 1)) { out.push({ a: nodeKey(c, r), b: nodeKey(c + 1, r) }); }
-  if (!cellAt(set, c + 1, r)) { out.push({ a: nodeKey(c + 1, r), b: nodeKey(c + 1, r + 1) }); }
-  if (!cellAt(set, c, r + 1)) { out.push({ a: nodeKey(c + 1, r + 1), b: nodeKey(c, r + 1) }); }
-  if (!cellAt(set, c - 1, r)) { out.push({ a: nodeKey(c, r + 1), b: nodeKey(c, r) }); }
-  return out;
-}
-
-/** @param {Uint8Array} set @returns {Int32Array | null} each node's next node on the edge, or null at a fork */
-function boundaryNext(set) {
-  const next = new Int32Array(NODES).fill(-1);
-  for (let i = 0; i < C * R; i++) {
-    if (at(set, i) !== 1) { continue; }
-    for (const e of cellEdges(set, i % C, Math.floor(i / C))) {
-      if (at(next, e.a) !== -1) { return null; }
-      next[e.a] = e.b;
-    }
-  }
-  return next;
-}
-
-/** The shape's edge as a loop of grid points, or null if it isn't one loop. @param {Uint8Array} set */
-export function traceBoundary(set) {
-  const next = boundaryNext(set);
-  if (!next) { return null; }
-  const edges = next.reduce((n, v) => n + (v >= 0 ? 1 : 0), 0);
-  if (edges < 4) { return null; }
-  const start = next.findIndex((v) => v >= 0);
-  const loop = [start];
-  let cur = at(next, start);
-  for (let g = 0; g < edges && cur !== start; g++) {
-    if (cur < 0) { return null; }
-    loop.push(cur);
-    cur = at(next, cur);
-  }
-  return (cur === start && loop.length === edges) ? loop : null;
-}
-
-/** Grid points where the loop turns. @param {number[]} loop @returns {Pt[]} */
-export function cornersFromLoop(loop) {
-  check(loop.length >= 4, 'a loop needs at least 4 grid points');
-  /** @type {Pt[]} */
-  const out = [];
-  for (let k = 0; k < loop.length; k++) {
-    const d1 = at(loop, k) - wrap(loop, k - 1), d2 = wrap(loop, k + 1) - at(loop, k);
-    check(Math.abs(d1) === 1 || Math.abs(d1) === NI, 'loop points must be grid neighbours');
-    if (d1 !== d2) { out.push(nodeXY(at(loop, k))); }
-  }
-  return out;
-}
-
-/** @param {number} k */
-export function gridNbs(k) {
-  const i = k % NI, j = (k - i) / NI, out = [];
-  if (i > 0) { out.push(k - 1); }
-  if (i < NI - 1) { out.push(k + 1); }
-  if (j > 0) { out.push(k - NI); }
-  if (j < NJ - 1) { out.push(k + NI); }
-  return out;
-}
-
-/* ---------- track samples, shared by both modes ---------- */
+/* ---------- track samples ---------- */
 
 /** @param {number} x @param {number} y @returns {Sample} */
 function straightSample(x, y) {
@@ -455,60 +210,7 @@ function finishSamples(samples) {
   return total;
 }
 
-/** @typedef {{ P: Pt, d1: Pt, d2: Pt, r: number, lout: number, turn: 'L' | 'R', hair: boolean }} GridCorner */
-
-/** @param {Pt[]} corners @param {number} rmax @returns {GridCorner[]} */
-function gridCorners(corners, rmax) {
-  return corners.map((P, k) => {
-    const A = wrap(corners, k - 1), B = wrap(corners, k + 1);
-    const lin = Math.hypot(P.x - A.x, P.y - A.y), lout = Math.hypot(B.x - P.x, B.y - P.y);
-    const d1 = { x: (P.x - A.x) / lin, y: (P.y - A.y) / lin }, d2 = { x: (B.x - P.x) / lout, y: (B.y - P.y) / lout };
-    const cross = d1.x * d2.y - d1.y * d2.x;
-    check(Math.abs(cross) > 0.5, 'every grid corner must be a 90 degree turn');
-    /** @type {'L' | 'R'} */
-    const turn = cross > 0 ? 'L' : 'R';
-    return { P, d1, d2, r: Math.min(rmax, lin / 2, lout / 2), lout, turn, hair: false };
-  });
-}
-
-/** Two same-way corners one square apart make a hairpin. @param {GridCorner[]} cs */
-function markHairpins(cs) {
-  cs.forEach((c, k) => {
-    const nx = wrap(cs, k + 1);
-    if (c.lout <= 1.2 * STEP && c.turn === nx.turn) { c.hair = true; nx.hair = true; }
-  });
-}
-
-/** A rounded 90 degree corner. @param {Sample[]} out @param {GridCorner} c @param {number} k */
-function appendGridArc(out, c, k) {
-  const cx = c.P.x - c.d1.x * c.r + c.d2.x * c.r, cy = c.P.y - c.d1.y * c.r + c.d2.y * c.r;
-  const m = Math.max(3, Math.ceil(Math.PI * c.r / 2));
-  for (let t = 0; t < m; t++) {
-    const th = (t / m) * Math.PI / 2, co = Math.cos(th), si = Math.sin(th);
-    const ox = -c.d2.x * c.r * co + c.d1.x * c.r * si, oy = -c.d2.y * c.r * co + c.d1.y * c.r * si;
-    out.push({ x: cx + ox, y: cy + oy, curv: 1 / c.r, berm: c.hair, nx: ox / c.r, ny: oy / c.r, corner: k, ds: 0 });
-  }
-}
-
-/** A grid loop's corners rounded into a rideable track. @param {Pt[]} corners @param {number} rmax @returns {Track} */
-export function buildTrack(corners, rmax) {
-  check(corners.length >= 4, 'a track needs at least 4 corners');
-  check(rmax > 0, 'corner radius must be positive');
-  const cs = gridCorners(corners, rmax);
-  markHairpins(cs);
-  /** @type {Sample[]} */
-  const samples = [];
-  /** @type {Straight[]} */
-  const straights = [];
-  cs.forEach((c, k) => {
-    appendGridArc(samples, c, k);
-    const len = Math.max(0, c.lout - c.r - wrap(cs, k + 1).r);
-    straights.push(appendStraight(samples, { x: c.P.x + c.d2.x * c.r, y: c.P.y + c.d2.y * c.r }, c.d2, len));
-  });
-  return { kind: 'grid', cs, samples, straights, length: finishSamples(samples) };
-}
-
-/* ---------- circles mode: straights are tangent lines between rings ---------- */
+/* ---------- circles: corners are arcs, straights are tangent lines between rings ---------- */
 
 /**
  * The line that leaves ring A and joins ring B, given the way each is ridden. Null when none exists
@@ -632,7 +334,7 @@ export function buildCircleTrack(order) {
     appendRingArc(samples, c, { a0: Math.atan2(tin.by - c.y, tin.bx - c.x), sw, hair }, k);
     straights.push(appendStraight(samples, { x: tout.ax, y: tout.ay }, { x: tout.ux, y: tout.uy }, tout.len));
   });
-  return { kind: 'circles', cs, samples, straights, length: finishSamples(samples) };
+  return { cs, samples, straights, length: finishSamples(samples) };
 }
 
 /** @param {Placed} c @param {number} width */
@@ -946,183 +648,46 @@ export function features(tr) {
   const start = usable.length ? usable.reduce((a, b) => (b.mid.y < a.mid.y ? b : a)) : longestStraight;
   const lefts = tr.cs.filter((c) => c.turn === 'L').length, hair = tr.cs.filter((c) => c.hair).length;
   return { jumps: tr.straights.filter((s) => s.len >= 70), start, longest: longestStraight.len, lefts,
-    rights: tr.cs.length - lefts, hairpins: tr.kind === 'grid' ? Math.round(hair / 2) : hair };
+    rights: tr.cs.length - lefts, hairpins: hair };
 }
 
-/** Grid batch score: length, a jump straight, use of the yard, mixed turns, few wiggles. @param {Track} tr @param {Uint8Array} set */
-function scoreTrack(tr, set) {
-  const f = features(tr);
-  const jogs = tr.cs.filter((c, k) => c.lout <= 1.2 * STEP && c.turn !== wrap(tr.cs, k + 1).turn).length;
-  const rows = [];
-  for (let i = 0; i < set.length; i++) { if (at(set, i) === 1) { rows.push(Math.floor(i / C)); } }
-  const span = rows.length ? (Math.max(...rows) - Math.min(...rows) + 1) / R : 0;
-  const balance = Math.min(f.lefts, f.rights) / Math.max(1, f.lefts, f.rights);
-  return tr.length / 1000 + (f.longest >= 70 ? 0.6 : 0) + (span >= 0.85 ? 0.5 : 0)
-    - 0.15 * Math.max(0, jogs - 1) - 0.03 * Math.max(0, tr.cs.length - 18) + 0.4 * balance;
-}
 
-/** @param {Uint8Array} a @param {Uint8Array} b */
-function jaccard(a, b) {
-  let inter = 0, uni = 0;
-  a.forEach((v, i) => { const w = at(b, i); inter += v & w; uni += v | w; });
-  return uni ? inter / uni : 1;
-}
-
-/** Random grid layouts that form one loop and clear every obstacle. @param {BatchOpts} opts @returns {GridLayout[]} */
-function batchCandidates(opts) {
-  const rand = rng(opts.seed), blocked = blockedCells(opts.width);
-  /** @type {GridLayout[]} */
-  const cands = [];
-  for (let t = 0; t < CANDIDATES; t++) {
-    const set = growShape(rand, opts.fill, opts.flow, blocked), loop = traceBoundary(set);
-    const corners = loop ? cornersFromLoop(loop) : [];
-    if (corners.length < 4) { continue; }
-    const tr = buildTrack(corners, opts.rmax);
-    if (!samplesHitObstacle(tr.samples, opts.width)) { cands.push({ set, corners, score: scoreTrack(tr, set) }); }
-  }
-  return cands;
-}
-
-/** Six different grid layouts, best first. @param {BatchOpts} opts @returns {GridLayout[]} */
-export function makeBatch(opts) {
-  const cands = batchCandidates(opts);
-  cands.sort((a, b) => b.score - a.score);
-  /** @type {GridLayout[]} */
-  const chosen = [];
-  for (const c of cands) {
-    if (chosen.length < BATCH && chosen.every((x) => jaccard(x.set, c.set) <= 0.75)) { chosen.push(c); }
-  }
-  for (const c of cands) {
-    if (chosen.length < BATCH && !chosen.includes(c)) { chosen.push(c); }
-  }
-  return chosen;
-}
-
-/* ---------- draw mode: finish the loop ---------- */
-
-/** Grid points too close to an obstacle to lay track on. @param {number} width */
-export function blockedNodes(width) {
-  const out = new Uint8Array(NODES);
-  for (let k = 0; k < NODES; k++) {
-    const p = nodeXY(k);
-    out[k] = obstacleDist(p.x, p.y) < width / 2 + 2 ? 1 : 0;
-  }
-  return out;
-}
-
-/** @param {Int32Array} prev @param {number} from @param {number} end */
-function unwind(prev, from, end) {
-  const tail = [];
-  for (let x = from, g = 0; x !== end && g < NODES; g++) { tail.push(x); x = at(prev, x); }
-  return tail.reverse();
-}
+/* ---------- random circles ---------- */
 
 /**
- * Breadth-first: the shortest way from the end of the draft back to its start.
- * @param {number[]} draft
+ * One random circle that fits with the ones already placed, or null after a bounded number of tries.
  * @param {() => number} rand
- * @param {Uint8Array} blocked
- * @returns {number[] | null}
+ * @param {Placed[]} placed
+ * @param {number} width
+ * @param {boolean} hub the roundabout: bigger, and toward the middle of the yard
+ * @returns {Placed | null}
  */
-export function finishShortest(draft, rand, blocked) {
-  check(draft.length >= 2 && blocked.length === NODES, 'lay at least one piece first');
-  const start = at(draft, 0), end = at(draft, draft.length - 1);
-  const used = Uint8Array.from(blocked), seen = new Uint8Array(NODES);
-  const prev = new Int32Array(NODES).fill(-1), depth = new Int32Array(NODES);
-  for (const k of draft) { used[k] = 1; }
-  const queue = [end];
-  seen[end] = 1;
-  for (let h = 0; h < queue.length && h < NODES; h++) {
-    const u = at(queue, h);
-    for (const nb of shuffle(gridNbs(u), rand)) {
-      if (nb === start && draft.length + at(depth, u) >= 4) { return draft.concat(unwind(prev, u, end)); }
-      if (at(used, nb) === 1 || at(seen, nb) === 1) { continue; }
-      seen[nb] = 1; prev[nb] = u; depth[nb] = at(depth, u) + 1;
-      queue.push(nb);
-    }
+function tryPlace(rand, placed, width, hub) {
+  for (let t = 0; t < 200; t++) {
+    const r = hub ? 24 + rand() * 12 : 12 + rand() * 20;
+    const e = r + width / 2 + FENCE + 1;
+    const yLo = hub ? 90 : e, yHi = hub ? LOT_L - 90 : LOT_L - e;
+    const c = { id: placed.length + 1, x: e + rand() * (LOT_W - 2 * e), y: yLo + rand() * (yHi - yLo), r,
+      label: String(placed.length) };
+    if (circleProblems([...placed, c], -1, width).notes.length === 0) { return c; }
   }
   return null;
 }
 
-/** Turn direction at b: 0 straight, ±1 left/right. @param {number} a @param {number} b @param {number} c */
-function turnSign(a, b, c) {
-  /** @param {number} d */
-  const vec = (d) => (Math.abs(d) === 1 ? { x: d, y: 0 } : { x: 0, y: Math.sign(d) });
-  const d1 = vec(b - a), d2 = vec(c - b);
-  return d1.x * d2.y - d1.y * d2.x;
-}
-
-/** Longer is better, some corners are good, 20 ft wiggles are bad. @param {number[]} loop */
-function loopScore(loop) {
-  const sign = loop.map((b, k) => turnSign(wrap(loop, k - 1), b, wrap(loop, k + 1)));
-  const turns = sign.filter((s) => s !== 0).length;
-  const jogs = sign.filter((s, k) => s !== 0 && s === -wrap(sign, k + 1)).length;
-  return loop.length + Math.min(turns, 16) - 2.5 * jogs;
-}
-
-/** Score of the loop that closing path back to its start would make; -Infinity if it's too small. @param {number[]} path */
-function closedScore(path) { return path.length >= 4 ? loopScore(path) : -Infinity; }
-
-/** Neighbours in random order, straight ahead first more often than not. @param {number} u @param {number} from @param {() => number} rand */
-function orderNbs(u, from, rand) {
-  const nbs = shuffle(gridNbs(u), rand), ix = nbs.indexOf(u + (u - from));
-  if (from >= 0 && ix > 0 && rand() < 0.6) { nbs.splice(ix, 1); nbs.unshift(u + (u - from)); }
-  return nbs;
-}
-
 /**
- * One bounded depth-first search for a good way back to the start.
- * @param {number[]} draft
+ * 4 to 7 random circles, clear of the fence, the obstacles and each other. The first is the roundabout.
  * @param {() => number} rand
- * @param {Uint8Array} blocked
+ * @param {number} width
+ * @returns {{ x: number, y: number, r: number }[]}
  */
-function scenicOnce(draft, rand, blocked) {
-  const start = at(draft, 0), used = Uint8Array.from(blocked), path = draft.slice();
-  for (const k of draft) { used[k] = 1; }
-  const stack = [{ u: at(path, path.length - 1), nbs: orderNbs(at(path, path.length - 1), at(path, path.length - 2), rand), i: 0 }];
-  let best = null, bestScore = -Infinity;
-  for (let ex = 0; ex < DFS_BUDGET && stack.length > 0; ex++) {
-    const top = at(stack, stack.length - 1);
-    if (top.i >= top.nbs.length) {
-      stack.pop();
-      if (stack.length > 0) { used[top.u] = 0; path.pop(); }
-      continue;
-    }
-    const nb = at(top.nbs, top.i++), closing = nb === start ? closedScore(path) : -Infinity;
-    if (closing > bestScore) { bestScore = closing; best = path.slice(); }
-    if (at(used, nb) === 1) { continue; }
-    used[nb] = 1;
-    path.push(nb);
-    stack.push({ u: nb, nbs: orderNbs(nb, top.u, rand), i: 0 });
+export function randomCircles(rand, width) {
+  check(width > 0, 'track width must be positive');
+  const want = 4 + Math.floor(rand() * (MAX_CIRCLES - 3));
+  /** @type {Placed[]} */
+  const placed = [];
+  for (let k = 0; k < want; k++) {
+    const c = tryPlace(rand, placed, width, k === 0);
+    if (c) { placed.push(c); }
   }
-  return best ? { loop: best, score: bestScore } : null;
-}
-
-/**
- * Many short random searches; keeps the best loop found.
- * @param {number[]} draft
- * @param {() => number} rand
- * @param {Uint8Array} blocked
- * @returns {number[] | null}
- */
-export function finishScenic(draft, rand, blocked) {
-  check(draft.length >= 2 && blocked.length === NODES, 'lay at least one piece first');
-  let best = null, bestScore = -Infinity;
-  for (let tryNo = 0; tryNo < DFS_RESTARTS; tryNo++) {
-    const found = scenicOnce(draft, rand, blocked);
-    if (found && found.score > bestScore) { bestScore = found.score; best = found.loop; }
-  }
-  return best;
-}
-
-/** Grid points from a (exclusive) to b (inclusive) along a row or column, or null if not in line. @param {number} a @param {number} b */
-export function lineNodes(a, b) {
-  const ai = a % NI, aj = (a - ai) / NI, bi = b % NI, bj = (b - bi) / NI;
-  if (ai !== bi && aj !== bj) { return null; }
-  const di = Math.sign(bi - ai), dj = Math.sign(bj - aj), out = [];
-  for (let g = 1; g <= NI + NJ; g++) {
-    out.push((aj + dj * g) * NI + ai + di * g);
-    if (ai + di * g === bi && aj + dj * g === bj) { return out; }
-  }
-  return out;
+  return placed.map((c) => ({ x: c.x, y: c.y, r: c.r }));
 }

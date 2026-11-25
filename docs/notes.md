@@ -9,7 +9,7 @@ The first version was built in one session on the drive to Wichita, as a Claude 
 - **Circles mode (main):** he places circle centers and sets a radius for each. The first circle is the roundabout, ridden counterclockwise, clockwise, or either (his call 11-25: don't lock it). The solver tries every set of the other circles, in every order and direction. Straights are tangent lines: the outer tangent when two circles go the same way, the crossing one when they go opposite ways (an S-bend). It rejects crossings, straights through circles, less than 6 ft of grass between sections, and anything that touches the house.
 - **Who he cares about (11-25):** the back neighbors most. North (chickens and a dog) "aware": counted at −6 dB. South rides motorcycles too, so "don't mind": left out. Each is a select on the page.
 - **Noise:** the lap sim (point mass: 40 mph cap, 0.3 g drive, 0.45 g brake, 0.7 g flat / 1.0 g bermed grip) labels every point full throttle, part throttle, or braking. Noise at each neighbor's door is the throttle level minus 20·log10(d / 50 ft). Neighbor doors are placed from the photo: five back doors about 45 ft past the back fence, the south house about 75 ft out, the north house about 30 ft out. The **ease-off zone** (back 100 ft, part throttle only) costs about 1 s a lap and brings the back neighbors from about −4.5 to −9 dB.
-- **Grid / Draw modes:** the first version, on 20 ft squares, with RCT-style "finish the loop" (BFS shortest, randomized-restart DFS scenic).
+- **Grid / Draw modes:** removed 11-25 (his call: Circles does it better). In git history before that date.
 
 ## Open questions
 
@@ -31,3 +31,12 @@ Set up 11-25 under the coding standard from the first commit: `npm run check` an
 avoids squares next to obstacles (`blockedCells`); before that, the house, fire pit and box rejected most grid
 candidates, and the refactor's new random sequence rejected all of them. The test "grid batch tracks avoid
 obstacles" caught it.
+
+## 11-25 afternoon
+
+- **Randomize:** 4 to 7 random circles that fit (`randomCircles` in core.js, bounded tries), retried up to 12 times
+  until a set has a loop. About 60 ms a press. Test: 30 random sets, at least 20 solve.
+- **Saved layouts:** localStorage (`backyard-track-lab.saves.v1`), newest 30 kept, per browser. Each save holds the
+  circles, the chosen loop (by circle index and direction) and the settings; it's validated field by field when
+  read back, and bad entries are skipped. Loading puts the saved loop first if it isn't in the top six.
+- He's brainstorming and "having fun with it", so features over polish for now.

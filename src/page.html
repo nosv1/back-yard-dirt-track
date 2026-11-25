@@ -43,9 +43,6 @@ h3 { font-family: var(--font-display); font-weight: 600; font-size: 19px; margin
 .lab { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 24px; padding-block: 18px 8px; align-items: start; }
 @media (max-width: 760px) { .lab { grid-template-columns: minmax(0, 1fr); } }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--bg); padding: 4px; border-radius: 8px; }
-.tabs button { font: 600 14px var(--font-body); border: 0; background: transparent; color: var(--muted); padding: 8px 4px; border-radius: 6px; cursor: pointer; }
-.tabs button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
 .group { display: flex; flex-direction: column; gap: 10px; }
 .hint { font-size: 13px; color: var(--muted); margin: 0; }
 .selbox { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--bg); }
@@ -61,7 +58,16 @@ select { font: 13px var(--font-body); padding: 7px 8px; border-radius: 7px; bord
 .btn { font: 600 13px var(--font-body); padding: 8px 12px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
 .selbox .btn { background: var(--panel); }
 .btn.primary { background: var(--tape); border-color: var(--tape); color: #fff; }
-.btn:focus-visible, .tabs button:focus-visible, .thumb:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
+.btn:focus-visible, .thumb:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.save-row { display: flex; gap: 8px; }
+.save-row input { flex: 1; min-width: 0; font: 14px var(--font-body); padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.saves { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.saves li { display: flex; gap: 6px; align-items: stretch; }
+.save-load { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; font: inherit; }
+.save-load b { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.save-load span { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.save-load:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; border-top: 1px solid var(--line); padding-top: 14px; }
 dl.stats dt { font-size: 13px; color: var(--muted); }
 dl.stats dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
@@ -109,17 +115,11 @@ details.more[open] summary { margin-bottom: 12px; }
 <header class="wrap">
   <div class="eyebrow">1.06 acres · 164 × 282 ft, measured · house at the bottom · 125 cc</div>
   <h1>Backyard Track Lab</h1>
-  <p class="lede">Every corner is part of a circle, and every straight is a line that touches two circles. In <b>Circles</b>, you place the circles and the solver works out every way to link them into one loop that never crosses itself. <b>Grid</b> and <b>Draw</b> are the first version, which uses 20 ft squares.</p>
+  <p class="lede">Every corner is part of a circle, and every straight is a line that touches two circles. You place the circles, or press Randomize, and the solver works out every way to link them into one loop that never crosses itself.</p>
 </header>
 
 <main class="wrap lab">
   <section class="panel" aria-label="Controls">
-    <div class="tabs" role="group" aria-label="Mode">
-      <button id="tab-circles" type="button" aria-pressed="true">Circles</button>
-      <button id="tab-gen" type="button" aria-pressed="false">Grid</button>
-      <button id="tab-draw" type="button" aria-pressed="false">Draw</button>
-    </div>
-
     <div class="group" id="circle-controls">
       <p class="hint">Tap an empty spot in the yard to drop a circle, and drag a circle to move it. The orange circle is the roundabout, and every layout goes through it in the direction you pick below. Other circles can go either way. Up to 7 circles.</p>
       <div class="selbox" id="selbox">
@@ -132,6 +132,7 @@ details.more[open] summary { margin-bottom: 12px; }
         </div>
       </div>
       <div class="row">
+        <button class="btn primary" id="randomize" type="button">Randomize</button>
         <button class="btn" id="example" type="button">Load the example</button>
         <button class="btn" id="clear-circles" type="button">Clear circles</button>
       </div>
@@ -150,37 +151,23 @@ details.more[open] summary { margin-bottom: 12px; }
         </select></label>
       <p class="hint" id="solve-line"></p>
     </div>
-
-    <div class="group" id="gen-controls" hidden>
-      <label class="slider" for="flow">Twisty to flowing <output id="flow-out">55</output>
-        <input id="flow" type="range" min="0" max="100" value="55"></label>
-      <label class="slider" for="fill">How much of the yard <output id="fill-out">30%</output>
-        <input id="fill" type="range" min="0" max="80" value="30"></label>
-      <div class="row">
-        <button class="btn primary" id="newbatch" type="button">New batch</button>
-        <button class="btn" id="reverse" type="button">Ride it the other way</button>
-      </div>
-      <p class="hint" id="seed-line"></p>
-    </div>
-
-    <div class="group" id="draw-controls" hidden>
-      <p class="hint">Click grid points to lay track. Each click runs straight along a row or column from the end of the track. Then ask the solver to finish the loop, or click the start point to close it yourself.</p>
-      <div class="row">
-        <button class="btn primary" id="finish-short" type="button">Finish: shortest</button>
-        <button class="btn primary" id="finish-scenic" type="button">Finish: scenic</button>
-      </div>
-      <div class="row">
-        <button class="btn" id="undo" type="button">Undo</button>
-        <button class="btn" id="clear" type="button">Clear</button>
-      </div>
-    </div>
-
     <div class="group">
       <label class="slider" for="width">Track width <output id="width-out">10 ft</output>
         <input id="width" type="range" min="6" max="14" value="10"></label>
-      <label class="slider" for="rmax" id="rmax-label" hidden>Widest grid corner <output id="rmax-out">20 ft</output>
-        <input id="rmax" type="range" min="10" max="30" value="20"></label>
     </div>
+
+    <details class="more" open>
+    <summary>Saved layouts</summary>
+    <div class="group">
+      <div class="save-row">
+        <label class="sr-only" for="save-name">Name for this layout</label>
+        <input id="save-name" type="text" maxlength="40" placeholder="Name (optional)" autocomplete="off">
+        <button class="btn primary" id="save" type="button">Save</button>
+      </div>
+      <p class="hint" id="saves-empty">Nothing saved yet. Saves stay in this browser, so your phone and computer keep separate lists. The newest 30 are kept.</p>
+      <ul class="saves" id="saves"></ul>
+    </div>
+    </details>
 
     <details class="more">
     <summary>Neighbors and noise</summary>
