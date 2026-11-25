@@ -69,6 +69,7 @@ select { font: 13px var(--font-body); padding: 7px 8px; border-radius: 7px; bord
 .save-load span { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
 .save-load:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 .ride-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ride-row .btn { white-space: nowrap; }
 dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; border-top: 1px solid var(--line); padding-top: 14px; }
 dl.stats dt { font-size: 13px; color: var(--muted); }
 dl.stats dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
@@ -108,6 +109,8 @@ details.more[open] summary { margin-bottom: 12px; }
   .legend { order: 1; padding-top: 0; max-width: none; }
   dl.stats { order: -2; border-top: 0; padding-top: 0; }
   .msg { order: -1; }
+  .edit { order: -3; }
+  .ride-row { order: -1; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -121,8 +124,12 @@ details.more[open] summary { margin-bottom: 12px; }
 
 <main class="wrap lab">
   <section class="panel" aria-label="Controls">
-    <div class="group" id="circle-controls">
-      <p class="hint">Tap an empty spot in the yard to drop a circle, and drag a circle to move it. The orange circle is the roundabout, and every layout goes through it in the direction you pick below. Other circles can go either way. Up to 7 circles.</p>
+    <div class="group edit" id="edit-box">
+      <div class="row">
+        <button class="btn primary" id="randomize" type="button">Randomize</button>
+        <button class="btn" id="example" type="button">Load the example</button>
+        <button class="btn" id="clear-circles" type="button">Clear circles</button>
+      </div>
       <div class="selbox" id="selbox">
         <b id="sel-name">Roundabout</b>
         <label class="slider" for="radius">Radius <output id="radius-out">30 ft</output>
@@ -132,11 +139,9 @@ details.more[open] summary { margin-bottom: 12px; }
           <button class="btn" id="del-circle" type="button">Remove</button>
         </div>
       </div>
-      <div class="row">
-        <button class="btn primary" id="randomize" type="button">Randomize</button>
-        <button class="btn" id="example" type="button">Load the example</button>
-        <button class="btn" id="clear-circles" type="button">Clear circles</button>
-      </div>
+    </div>
+    <div class="group" id="circle-controls">
+      <p class="hint">Tap the yard to drop a circle, drag one to move it, and pinch one to resize it. Every layout goes through the orange roundabout, in the direction you pick below. Up to 7 circles.</p>
       <label class="check" for="use-all"><input id="use-all" type="checkbox"> Every layout uses every circle</label>
       <label class="field" for="rank">Rank layouts by
         <select id="rank">

@@ -47,3 +47,5 @@ obstacles" caught it.
 - **Ride a lap (11-25 evening, his brother's idea):** a top-down bike rides the selected layout in real time at the
   sim's speed, with mph above it. The map is snapshotted once and only the bike is redrawn each frame; any re-render
   stops it, and it stops on its own after 20 laps.
+- **Pinch to resize (11-25 evening):** two fingers on or around a circle scale its radius (10 to 50 ft); it re-solves
+  when a finger lifts. Edit buttons and the circle box sit first under the map on phones; Ride sits above the map.

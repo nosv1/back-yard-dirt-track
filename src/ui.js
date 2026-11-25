@@ -34,6 +34,7 @@ import {
  *   overlay: Overlay | null, ghosts?: Track[] }} YardOpts
  */
 /** @typedef {{ ox: number, oy: number, s: number }} Geo */
+/** @typedef {{ clientX: number, clientY: number }} Client */
 /**
  * A lap being ridden on the main map: a snapshot of the map, the lap, cumulative times, and the animation frame.
  * @typedef {{ snap: HTMLCanvasElement, tr: Track, sim: Sim, times: Float64Array, t0: number, idx: number,
@@ -54,7 +55,7 @@ import {
  *   cpick: number, csol: Layout[], cbad: Set<number>, drag: { id: number, dx: number, dy: number } | null,
  *   tap: { w: Pt, sx: number, sy: number } | null, useAll: boolean, rank: Rank, hubDir: HubDir, gaps: Gaps,
  *   noiseMap: boolean, quietDepth: number, concerns: Concerns, resizeTimer: number,
- *   ride: Ride | null }} UiState
+ *   ride: Ride | null, pts: Map<number, Client>, pinch: { id: number, r0: number, d0: number } | null }} UiState
  */
 
 const MAIN_M = Object.freeze({ l: 34, r: 10, t: 40, b: 30 });
@@ -82,7 +83,7 @@ const state = {
   width: 10, geo: null, circles: [], nextId: 1, hub: 0, csel: 0, cpick: -1, csol: [], cbad: new Set(),
   drag: null, tap: null, useAll: false, rank: 'both', hubDir: 'either',
   gaps: { back: 45, north: 30, south: 75 }, noiseMap: true, quietDepth: 100,
-  concerns: { back: 'high', north: 'some', south: 'none' }, resizeTimer: 0, ride: null,
+  concerns: { back: 'high', north: 'some', south: 'none' }, resizeTimer: 0, ride: null, pts: new Map(), pinch: null,
 };
 
 /* ---------- DOM access with checks ---------- */
@@ -902,7 +903,7 @@ function renderSaves() {
 
 /* ---------- pointer input ---------- */
 
-/** @param {MouseEvent} ev @returns {Pt | null} */
+/** @param {Client} ev a pointer event, or a point between two fingers @returns {Pt | null} */
 function toWorld(ev) {
   const g = state.geo;
   if (!g) { return null; }
@@ -935,9 +936,46 @@ function addCircle(w) {
   solveNow();
 }
 
-/** Down on a circle starts a drag; down on grass waits to see if it's a tap. @param {Event} ev */
+const MAX_POINTERS = 4;   // fingers tracked at once; more are ignored
+
+/** The first two fingers down, or null. @returns {[Client, Client] | null} */
+function twoFingers() {
+  const v = [...state.pts.values()];
+  return v.length >= 2 ? [at(v, 0), at(v, 1)] : null;
+}
+
+/** A second finger down starts a pinch on the circle being dragged, or the one between the fingers. */
+function startPinch() {
+  const two = twoFingers();
+  if (!two) { return; }
+  const [a, b] = two, mid = { clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2 };
+  const w = toWorld(mid), dragged = state.drag;
+  const c = dragged ? state.circles.find((x) => x.id === dragged.id) : (w ? circleUnder(w) : null);
+  const d0 = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  state.tap = null; state.drag = null;
+  if (!c || d0 < 10) { return; }
+  state.pinch = { id: c.id, r0: c.r, d0 };
+  state.cpick = c.id;
+  msg('', false);
+}
+
+/** Pinch in or out to shrink or grow the circle; true when a pinch handled the move. */
+function movePinch() {
+  const pinch = state.pinch, two = twoFingers();
+  const c = pinch ? state.circles.find((x) => x.id === pinch.id) : undefined;
+  if (!pinch || !two || !c) { return false; }
+  const d = Math.hypot(two[0].clientX - two[1].clientX, two[0].clientY - two[1].clientY);
+  c.r = Math.round(Math.max(MIN_R, Math.min(MAX_R, pinch.r0 * d / pinch.d0)));
+  state.cbad = circleProblems(state.circles, state.hub, state.width).bad;
+  renderMain();
+  return true;
+}
+
+/** Down on a circle starts a drag; down on grass waits to see if it's a tap; two fingers pinch. @param {Event} ev */
 function onPointerDown(ev) {
   check(ev instanceof PointerEvent, 'expected a pointer event');
+  if (state.pts.size < MAX_POINTERS) { state.pts.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY }); }
+  if (state.pts.size >= 2) { mainCanvas.setPointerCapture(ev.pointerId); ev.preventDefault(); startPinch(); return; }
   const w = toWorld(ev);
   if (!w || w.x < 0 || w.x > LOT_W || w.y < 0 || w.y > LOT_L) { return; }
   const hit = circleUnder(w);
@@ -953,6 +991,8 @@ function onPointerDown(ev) {
 /** @param {Event} ev */
 function onPointerMove(ev) {
   check(ev instanceof PointerEvent, 'expected a pointer event');
+  if (state.pts.has(ev.pointerId)) { state.pts.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY }); }
+  if (movePinch()) { return; }
   const tap = state.tap;
   if (tap && Math.hypot(ev.clientX - tap.sx, ev.clientY - tap.sy) > 10) { state.tap = null; }
   const dr = state.drag, w = toWorld(ev);
@@ -964,8 +1004,11 @@ function onPointerMove(ev) {
   renderMain();
 }
 
-/** A tap on grass adds a circle; the end of a drag re-solves. */
-function onPointerUp() {
+/** A tap on grass adds a circle; the end of a drag or pinch re-solves. @param {Event} ev */
+function onPointerUp(ev) {
+  check(ev instanceof PointerEvent, 'expected a pointer event');
+  state.pts.delete(ev.pointerId);
+  if (state.pinch) { if (state.pts.size < 2) { state.pinch = null; solveNow(); } return; }
   const tap = state.tap;
   state.tap = null;
   if (tap) { addCircle(tap.w); return; }
@@ -974,9 +1017,10 @@ function onPointerUp() {
   solveNow();
 }
 
-function onPointerCancel() {
+/** @param {Event} ev */
+function onPointerCancel(ev) {
   state.tap = null;
-  onPointerUp();
+  onPointerUp(ev);
 }
 
 /* ---------- wiring ---------- */

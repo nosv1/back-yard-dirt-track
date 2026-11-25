@@ -10,7 +10,7 @@ with nothing to install, and it works on a phone.
 
 The page opens with an example already solved.
 
-- **Tap the yard** to drop a circle, and **drag** a circle to move it. Change the selected circle's size with the
+- **Tap the yard** to drop a circle, **drag** a circle to move it, and **pinch** a circle to resize it. Change the selected circle's size with the
   radius slider.
 - **Randomize** drops 4 to 7 random circles where they fit and solves them. Press it again for a new set.
 - **Saved layouts** keeps the circles, the loop you picked, and your settings. Saves live in the browser you made
