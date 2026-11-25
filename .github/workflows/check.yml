@@ -1,0 +1,18 @@
+# Runs on every push and pull request: build, lint (zero warnings), strict types, tests, and a check that the
+# committed index.html matches the sources. The coding standard: nosv1/nosv1 CODING.md.
+name: check
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: index.html is built from the current sources
+        run: git diff --exit-code index.html

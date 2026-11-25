@@ -1,0 +1,260 @@
+<title>Backyard Track Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a site-plan workbench. Controls and readings on the left, the yard drawn to scale beside them, house at the bottom like walking out the back door. */
+:root {
+  --bg: #eef1ea; --panel: #fafbf8; --fg: #1b2119; --muted: #5a6656; --line: #d2d9cc;
+  --grass: #84a95e; --grass-2: #7aa055; --dirt: #9a653a; --dirt-edge: #6b4322;
+  --tape: #ee5d0b; --bad: #c8302a; --house: #c5ccbf; --chalk: rgba(255,255,255,0.45);
+  --loud: #d8392b; --part: #f0b429; --cool: #3b8fd6;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121611; --panel: #181d16; --fg: #e3e9de; --muted: #96a290; --line: #2b3328;
+    --grass: #3e5b2d; --grass-2: #39552a; --dirt: #a76d3e; --dirt-edge: #5c391d;
+    --tape: #ff7a2b; --bad: #ff6a5e; --house: #394135; --chalk: rgba(255,255,255,0.35);
+    --loud: #ff5a48; --part: #f7c04a; --cool: #62adf0; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121611; --panel: #181d16; --fg: #e3e9de; --muted: #96a290; --line: #2b3328;
+  --grass: #3e5b2d; --grass-2: #39552a; --dirt: #a76d3e; --dirt-edge: #5c391d;
+  --tape: #ff7a2b; --bad: #ff6a5e; --house: #394135; --chalk: rgba(255,255,255,0.35);
+    --loud: #ff5a48; --part: #f7c04a; --cool: #62adf0; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header.wrap { padding-block: 28px 8px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(34px, 6vw, 52px); line-height: 1; margin: 6px 0 10px; letter-spacing: 0.01em; text-wrap: balance; }
+h2 { font-family: var(--font-display); font-weight: 700; font-size: 24px; margin: 0 0 10px; letter-spacing: 0.02em; text-wrap: balance; }
+h3 { font-family: var(--font-display); font-weight: 600; font-size: 19px; margin: 0 0 8px; letter-spacing: 0.03em; text-transform: uppercase; }
+.lede { max-width: 68ch; color: var(--muted); margin: 0; }
+.lab { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 24px; padding-block: 18px 8px; align-items: start; }
+@media (max-width: 760px) { .lab { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--bg); padding: 4px; border-radius: 8px; }
+.tabs button { font: 600 14px var(--font-body); border: 0; background: transparent; color: var(--muted); padding: 8px 4px; border-radius: 6px; cursor: pointer; }
+.tabs button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+.group { display: flex; flex-direction: column; gap: 10px; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+.selbox { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--bg); }
+.selbox b { font-family: var(--font-display); font-size: 18px; letter-spacing: 0.02em; }
+label.slider { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 13px; font-weight: 500; }
+label.slider output { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+label.slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--tape); }
+label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; font-weight: 500; }
+label.check input { accent-color: var(--tape); width: 16px; height: 16px; }
+label.field { display: grid; gap: 4px; font-size: 13px; font-weight: 500; }
+select { font: 13px var(--font-body); padding: 7px 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { font: 600 13px var(--font-body); padding: 8px 12px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+.selbox .btn { background: var(--panel); }
+.btn.primary { background: var(--tape); border-color: var(--tape); color: #fff; }
+.btn:focus-visible, .tabs button:focus-visible, .thumb:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
+dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; border-top: 1px solid var(--line); padding-top: 14px; }
+dl.stats dt { font-size: 13px; color: var(--muted); }
+dl.stats dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+.msg { font-size: 13px; min-height: 1.5em; margin: 0; color: var(--muted); }
+.msg.err { color: var(--bad); font-weight: 600; }
+.yard { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; min-width: 0; }
+#main { display: block; max-width: 100%; }
+#main.drawing { cursor: crosshair; }
+#main.circles { cursor: crosshair; touch-action: none; }
+.legend { display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--muted); padding-top: 30px; max-width: 30ch; }
+.legend .k { display: flex; gap: 10px; align-items: center; }
+.sw { width: 26px; height: 10px; border-radius: 2px; flex: none; }
+.sw.ring { height: 14px; width: 14px; border-radius: 50%; border: 2px dashed var(--tape); background: transparent; margin: 0 6px; }
+.legend p { margin: 6px 0 0; }
+.batch { padding-block: 26px 8px; }
+#thumbs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { #thumbs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.thumb { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--fg); cursor: pointer; text-align: left; font: inherit; min-width: 0; }
+.thumb[aria-pressed="true"] { border-color: var(--tape); box-shadow: 0 0 0 1px var(--tape); }
+.thumb canvas { width: 100%; aspect-ratio: 1 / 3; max-width: 100%; display: block; }
+.thumb span { font-family: var(--font-mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.thumb b { font-family: var(--font-display); font-size: 17px; color: var(--fg); }
+.empty { color: var(--muted); font-size: 14px; margin: 0; }
+.notes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; padding-block: 26px 48px; }
+@media (max-width: 760px) { .notes { grid-template-columns: minmax(0, 1fr); } }
+.notes ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; max-width: 62ch; }
+.notes li em { color: var(--muted); font-style: normal; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="wrap">
+  <div class="eyebrow">1.06 acres · 164 × 282 ft, measured · house at the bottom · 125 cc</div>
+  <h1>Backyard Track Lab</h1>
+  <p class="lede">Every corner is part of a circle, and every straight is a line that touches two circles. In <b>Circles</b>, you place the circles and the solver works out every way to link them into one loop that never crosses itself. <b>Grid</b> and <b>Draw</b> are the first version, which uses 20 ft squares.</p>
+</header>
+
+<main class="wrap lab">
+  <section class="panel" aria-label="Controls">
+    <div class="tabs" role="group" aria-label="Mode">
+      <button id="tab-circles" type="button" aria-pressed="true">Circles</button>
+      <button id="tab-gen" type="button" aria-pressed="false">Grid</button>
+      <button id="tab-draw" type="button" aria-pressed="false">Draw</button>
+    </div>
+
+    <div class="group" id="circle-controls">
+      <p class="hint">Tap the yard to drop a circle, and drag a circle to move it. The orange circle is the roundabout, and every layout goes through it in the direction you pick below. Other circles can go either way. Up to 7 circles.</p>
+      <div class="selbox" id="selbox">
+        <b id="sel-name">Roundabout</b>
+        <label class="slider" for="radius">Radius <output id="radius-out">30 ft</output>
+          <input id="radius" type="range" min="10" max="50" value="30"></label>
+        <div class="row">
+          <button class="btn" id="make-hub" type="button">Make it the roundabout</button>
+          <button class="btn" id="del-circle" type="button">Remove</button>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn" id="example" type="button">Load the example</button>
+        <button class="btn" id="clear-circles" type="button">Clear circles</button>
+      </div>
+      <label class="check" for="use-all"><input id="use-all" type="checkbox"> Every layout uses every circle</label>
+      <label class="field" for="rank">Rank layouts by
+        <select id="rank">
+          <option value="both">Length and quiet at the back</option>
+          <option value="quiet">Quietest at the back</option>
+          <option value="longest">Longest</option>
+        </select></label>
+      <label class="field" for="hub-dir">Roundabout direction
+        <select id="hub-dir">
+          <option value="either">Either way</option>
+          <option value="ccw">Counterclockwise</option>
+          <option value="cw">Clockwise</option>
+        </select></label>
+      <p class="hint" id="solve-line"></p>
+    </div>
+
+    <div class="group" id="gen-controls" hidden>
+      <label class="slider" for="flow">Twisty to flowing <output id="flow-out">55</output>
+        <input id="flow" type="range" min="0" max="100" value="55"></label>
+      <label class="slider" for="fill">How much of the yard <output id="fill-out">30%</output>
+        <input id="fill" type="range" min="0" max="80" value="30"></label>
+      <div class="row">
+        <button class="btn primary" id="newbatch" type="button">New batch</button>
+        <button class="btn" id="reverse" type="button">Ride it the other way</button>
+      </div>
+      <p class="hint" id="seed-line"></p>
+    </div>
+
+    <div class="group" id="draw-controls" hidden>
+      <p class="hint">Click grid points to lay track. Each click runs straight along a row or column from the end of the track. Then ask the solver to finish the loop, or click the start point to close it yourself.</p>
+      <div class="row">
+        <button class="btn primary" id="finish-short" type="button">Finish: shortest</button>
+        <button class="btn primary" id="finish-scenic" type="button">Finish: scenic</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="undo" type="button">Undo</button>
+        <button class="btn" id="clear" type="button">Clear</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <label class="slider" for="width">Track width <output id="width-out">10 ft</output>
+        <input id="width" type="range" min="6" max="14" value="10"></label>
+      <label class="slider" for="rmax" id="rmax-label" hidden>Widest grid corner <output id="rmax-out">20 ft</output>
+        <input id="rmax" type="range" min="10" max="30" value="20"></label>
+    </div>
+
+    <div class="group">
+      <label class="slider" for="back-gap">Back neighbors past the fence <output id="back-gap-out">45 ft</output>
+        <input id="back-gap" type="range" min="30" max="60" step="5" value="45"></label>
+      <label class="field" for="concern-back">How careful to be with the back neighbors
+        <select id="concern-back">
+          <option value="high" selected>Most careful</option>
+          <option value="some">Aware</option>
+          <option value="none">Don't mind</option>
+        </select></label>
+      <label class="slider" for="north-gap">Right neighbor (north) past the fence <output id="north-gap-out">30 ft</output>
+        <input id="north-gap" type="range" min="10" max="150" step="5" value="30"></label>
+      <label class="field" for="concern-north">Right neighbor (chickens and a dog)
+        <select id="concern-north">
+          <option value="high">Most careful</option>
+          <option value="some" selected>Aware</option>
+          <option value="none">Don't mind</option>
+        </select></label>
+      <label class="slider" for="south-gap">Left neighbor (south) past the fence <output id="south-gap-out">75 ft</output>
+        <input id="south-gap" type="range" min="10" max="150" step="5" value="75"></label>
+      <label class="field" for="concern-south">Left neighbor (rides too)
+        <select id="concern-south">
+          <option value="high">Most careful</option>
+          <option value="some">Aware</option>
+          <option value="none" selected>Don't mind</option>
+        </select></label>
+      <label class="slider" for="quiet-depth">Ease off this close to the back fence <output id="quiet-depth-out">100 ft</output>
+        <input id="quiet-depth" type="range" min="0" max="170" step="10" value="100"></label>
+      <label class="check" for="noise-map"><input id="noise-map" type="checkbox" checked> Shade where revs carry to a neighbor</label>
+    </div>
+
+    <dl class="stats" aria-live="polite">
+      <dt>Lap length</dt><dd id="s-len">—</dd>
+      <dt>Lap time (sim)</dt><dd id="s-time">—</dd>
+      <dt>Top speed</dt><dd id="s-top">—</dd>
+      <dt>Average speed</dt><dd id="s-avg">—</dd>
+      <dt>Corners</dt><dd id="s-corners">—</dd>
+      <dt>Hairpins (berms)</dt><dd id="s-hair">—</dd>
+      <dt>Jumps</dt><dd id="s-jumps">—</dd>
+      <dt>Longest straight</dt><dd id="s-long">—</dd>
+      <dt>Closest pass</dt><dd id="s-pass">—</dd>
+      <dt>Full throttle</dt><dd id="s-full">—</dd>
+      <dt>Back neighbors</dt><dd id="s-back">—</dd>
+      <dt>Right (north)</dt><dd id="s-north">—</dd>
+      <dt>Left (south)</dt><dd id="s-south">—</dd>
+    </dl>
+    <p class="msg" id="msg"></p>
+  </section>
+
+  <section class="yard" aria-label="Yard plan">
+    <canvas id="main" width="280" height="760" role="img" aria-label="Plan view of the yard with the current track layout"></canvas>
+    <div class="legend">
+      <div class="k"><span class="sw" style="background: var(--dirt)"></span>Track, drawn to width</div>
+      <div class="k"><span class="sw ring"></span>Roundabout, with arrows for its direction</div>
+      <div class="k"><span class="sw" style="background: var(--dirt-edge)"></span>Berm, on turns of 135° or more</div>
+      <div class="k"><span class="sw" style="background: var(--tape)"></span>Jump, on straights of 70 ft or more</div>
+      <div class="k"><span class="sw" style="background: repeating-linear-gradient(90deg, var(--fg) 0 5px, var(--panel) 5px 10px)"></span>Start gate, on the straight nearest the house</div>
+      <div class="k"><span class="sw" style="background: var(--loud)"></span>Full throttle (loud)</div>
+      <div class="k"><span class="sw" style="background: var(--part)"></span>Part throttle</div>
+      <div class="k"><span class="sw" style="background: var(--cool)"></span>Braking or rolling off</div>
+      <p>Red shading shows where full throttle carries to a neighbor you're careful with. Noise is in dB compared with full throttle 50 ft from their door. −6 dB is like being twice as far away, and −10 dB sounds about half as loud.</p>
+      <p>Chevrons show the riding direction. Mow stripes are 20 ft apart. A red circle is too close to the fence, the house, a keep-out ring, or another circle. Dotted rings are keep-outs around the fire pit and electrical box. Brown contours mark the hilly area, which doesn't block anything yet.</p>
+    </div>
+  </section>
+</main>
+
+<section class="wrap batch">
+  <h2 id="batch-title">Ways to connect these circles</h2>
+  <div id="thumbs"></div>
+</section>
+
+<section class="wrap notes">
+  <div>
+    <h3>What I'm assuming</h3>
+    <ul>
+      <li>Measured on the satellite map: <b>164 × 282 ft</b>, about 1.06 acres. The house, deck, and shed take a block about 88 × 40 ft inside the fence at the bottom left, and the track has to go around it.</li>
+      <li>The fire pit has an 8 ft keep-out and the electrical box a 4 ft one, both placed from the satellite photo. The hilly area is drawn but not used yet.</li>
+      <li>The solver always uses the roundabout, ridden in the direction you pick, or both. It tries every set of the other circles, in every order, ridden either way around. It throws out any loop where a straight crosses another straight or cuts through a circle, and any with less than 6 ft of grass between sections.</li>
+      <li>Noise: full throttle counts as 0 dB, part throttle as −7 dB, and braking as −14 dB, all measured at 50 ft. Sound then drops 6 dB each time the distance doubles. Past the "ease off" line, the sim rides at part throttle only (0.1 g of drive), the way you'd short-shift near the back. Neighbor doors are placed from the satellite photo: five back doors along and just past the back fence, the left (south) house about 75 ft out, and the right (north) house about 30 ft out. Each neighbor gets a care level: "most careful" counts the noise as heard, "aware" counts it as if they were twice as far away (−6 dB), and "don't mind" leaves them out. A layout scores by the loudest neighbor after that. <em>The fence, wind, and which way the exhaust points aren't modeled.</em></li>
+      <li>Two circles ridden the same way are joined by the outside line, like a belt on two pulleys. Opposite ways are joined by the crossing line, which makes an S-bend.</li>
+      <li>Track edges stay 5 ft from the fence. The smallest radius allowed is 10 ft.</li>
+      <li>Lap time comes from a point-mass sim: a 40 mph cap, 0.3 g of drive, 0.45 g of braking, 0.7 g of grip in flat turns and 1.0 g on bermed ones. <em>Treat it as a ballpark for comparing layouts, not a prediction.</em></li>
+    </ul>
+  </div>
+  <div>
+    <h3>Questions for you</h3>
+    <ul>
+      <li><b>How much is quiet worth?</b> "Length and quiet" trades 100 ft of track for each dB at the loudest neighbor you care about. Say if that feels off.</li>
+      <li><b>Who rides it, and how big are the jumps?</b> That sets the smallest radius and how long a straight a jump needs.</li>
+      <li><b>What's already in the yard?</b> Trees, the septic field, slope, and wet spots would become places no track can go.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- @app -->

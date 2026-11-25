@@ -1,0 +1,2 @@
+# LF everywhere, so the built index.html matches byte for byte on Windows and in CI.
+* text=auto eol=lf

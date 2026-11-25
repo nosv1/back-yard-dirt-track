@@ -1,0 +1,19 @@
+{
+  "name": "back-yard-dirt-track",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "lint": "eslint --max-warnings 0 .",
+    "types": "tsc -p tsconfig.json --pretty false",
+    "test": "node --test tests/core.test.mjs",
+    "check": "npm run build && node --check build/bundle.mjs && npm run lint && npm run types && npm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "globals": "17.13.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
+  }
+}
