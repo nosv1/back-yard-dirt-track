@@ -28,7 +28,11 @@ Claude).
   - `tools/build.mjs` inlines both scripts into `index.html`, because the Claude artifact only runs inline scripts.
 - **Live:** GitHub Pages from `main` / root, [nosv1.github.io/back-yard-dirt-track](https://nosv1.github.io/back-yard-dirt-track/)
   (on 11-25); every push to main deploys it. The Claude artifact
-  [Backyard Track Lab](https://claude.ai/artifact/KmqdYAXCeA8kawXkiU6kgm) is for previews in a session.
+  [Backyard Track Lab](https://claude.ai/artifact/KmqdYAXCeA8kawXkiU6kgm) is for previews in a session: publish
+  `build/artifact.html` (a fragment; the artifact adds its own frame), never `index.html`.
+- **Phones:** `index.html` is a full document with the viewport meta and a base reset (the artifact frame used to
+  supply both, which is why the first Pages version wasn't mobile friendly). Check phone width by screenshotting
+  the page inside a 390 px iframe with headless Edge; headless windows can't go below ~500 px.
 
 ## Coding standard
 

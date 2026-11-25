@@ -48,7 +48,8 @@ const EXAMPLE = Object.freeze([
  * @typedef {{ mode: Mode, seed: number, flow: number, fill: number, width: number, rmax: number,
  *   reversed: boolean, batch: GridLayout[], sel: number, draft: number[], groups: number[], drawn: Pt[] | null,
  *   geo: Geo | null, circles: Placed[], nextId: number, hub: number, csel: number, cpick: number,
- *   csol: Layout[], cbad: Set<number>, drag: { id: number, dx: number, dy: number } | null, useAll: boolean,
+ *   csol: Layout[], cbad: Set<number>, drag: { id: number, dx: number, dy: number } | null,
+ *   tap: { w: Pt, sx: number, sy: number } | null, useAll: boolean,
  *   rank: Rank, hubDir: HubDir, gaps: { back: number, north: number, south: number }, noiseMap: boolean,
  *   quietDepth: number, concerns: Concerns, resizeTimer: number }} UiState
  */
@@ -61,7 +62,7 @@ const EXAMPLE = Object.freeze([
 const state = {
   mode: 'circles', seed: 2611, flow: 0.55, fill: 0.30, width: 10, rmax: 20, reversed: false,
   batch: [], sel: 0, draft: [], groups: [], drawn: null, geo: null,
-  circles: [], nextId: 1, hub: 0, csel: 0, cpick: -1, csol: [], cbad: new Set(), drag: null,
+  circles: [], nextId: 1, hub: 0, csel: 0, cpick: -1, csol: [], cbad: new Set(), drag: null, tap: null,
   useAll: false, rank: 'both', hubDir: 'either',
   gaps: { back: 45, north: 30, south: 75 }, noiseMap: true, quietDepth: 100,
   concerns: { back: 'high', north: 'some', south: 'none' },
@@ -537,10 +538,19 @@ function currentTrack() {
   return corners ? buildTrack(corners, state.rmax) : null;
 }
 
+/**
+ * Fits the yard to the screen: as tall as most of the window (less on phones, so there's always page
+ * outside the canvas to scroll by), and never wider than its column.
+ */
 function sizeMain() {
-  const H = Math.max(440, Math.min(780, Math.round(window.innerHeight * 0.84)));
-  mainCanvas.style.height = String(H) + 'px';
-  mainCanvas.style.width = String(Math.round((H - MAIN_M.t - MAIN_M.b) / ASPECT + MAIN_M.l + MAIN_M.r)) + 'px';
+  const narrow = window.innerWidth <= 760, padX = MAIN_M.l + MAIN_M.r, padY = MAIN_M.t + MAIN_M.b;
+  // On phones the yard section is display: contents (no box), so measure the panel's column instead.
+  const avail = Math.max(240, (narrow ? el('msg').parentElement ?? el('yard') : el('yard')).clientWidth);
+  let H = Math.max(360, Math.min(780, Math.round(window.innerHeight * (narrow ? 0.72 : 0.84))));
+  let W = (H - padY) / ASPECT + padX;
+  if (W > avail) { W = avail; H = (W - padX) * ASPECT + padY; }
+  mainCanvas.style.width = String(Math.floor(W)) + 'px';
+  mainCanvas.style.height = String(Math.floor(H)) + 'px';
 }
 
 /* ---------- rendering ---------- */
@@ -737,33 +747,39 @@ function onYardClick(ev) {
   extendDraft(node);
 }
 
-/** The circle under w, or a new one there. @param {Pt} w @returns {Placed | null} */
-function circleAt(w) {
+/** The circle under w, or null. @param {Pt} w @returns {Placed | null} */
+function circleUnder(w) {
   let hit = null, bestD = Infinity;
   for (const c of state.circles) {
     const d = Math.hypot(c.x - w.x, c.y - w.y);
     if (d <= Math.max(c.r, 8) && d < bestD) { hit = c; bestD = d; }
   }
-  if (hit) { return hit; }
+  return hit;
+}
+
+/** A new circle at w, unless that would pass the limit. @param {Pt} w */
+function addCircle(w) {
   if (state.circles.length >= MAX_CIRCLES) {
     msg('That is the ' + String(MAX_CIRCLES) + '-circle limit. Remove one to add another.', true);
-    return null;
+    return;
   }
   const made = { id: state.nextId++, x: w.x, y: w.y, r: state.circles.length ? 18 : 30, label: '' };
   state.circles.push(made);
   if (!state.hub) { state.hub = made.id; }
+  state.cpick = made.id;
   relabel();
-  return made;
+  msg('', false);
+  solveNow();
 }
 
-/** @param {Event} ev */
+/** Down on a circle starts a drag; down on grass waits to see if it's a tap. @param {Event} ev */
 function onPointerDown(ev) {
   if (state.mode !== 'circles') { return; }
   check(ev instanceof PointerEvent, 'expected a pointer event');
   const w = toWorld(ev);
   if (!w || w.x < 0 || w.x > LOT_W || w.y < 0 || w.y > LOT_L) { return; }
-  const hit = circleAt(w);
-  if (!hit) { return; }
+  const hit = circleUnder(w);
+  if (!hit) { state.tap = { w, sx: ev.clientX, sy: ev.clientY }; return; }
   state.cpick = hit.id;
   state.drag = { id: hit.id, dx: hit.x - w.x, dy: hit.y - w.y };
   mainCanvas.setPointerCapture(ev.pointerId);
@@ -774,21 +790,32 @@ function onPointerDown(ev) {
 
 /** @param {Event} ev */
 function onPointerMove(ev) {
-  const dr = state.drag;
-  if (!dr || state.mode !== 'circles') { return; }
+  if (state.mode !== 'circles') { return; }
   check(ev instanceof PointerEvent, 'expected a pointer event');
-  const w = toWorld(ev), c = state.circles.find((x) => x.id === dr.id);
-  if (!w || !c) { return; }
+  const tap = state.tap;
+  if (tap && Math.hypot(ev.clientX - tap.sx, ev.clientY - tap.sy) > 10) { state.tap = null; }
+  const dr = state.drag, w = toWorld(ev);
+  const c = dr ? state.circles.find((x) => x.id === dr.id) : undefined;
+  if (!dr || !w || !c) { return; }
   c.x = Math.max(0, Math.min(LOT_W, w.x + dr.dx));
   c.y = Math.max(0, Math.min(LOT_L, w.y + dr.dy));
   state.cbad = circleProblems(state.circles, state.hub, state.width).bad;
   renderMain();
 }
 
+/** A tap on grass adds a circle; the end of a drag re-solves. */
 function onPointerUp() {
+  const tap = state.tap;
+  state.tap = null;
+  if (tap) { addCircle(tap.w); return; }
   if (!state.drag) { return; }
   state.drag = null;
   solveNow();
+}
+
+function onPointerCancel() {
+  state.tap = null;
+  onPointerUp();
 }
 
 /* ---------- wiring ---------- */
@@ -901,7 +928,7 @@ function wirePage() {
   mainCanvas.addEventListener('pointerdown', guard(onPointerDown));
   mainCanvas.addEventListener('pointermove', guard(onPointerMove));
   mainCanvas.addEventListener('pointerup', guard(onPointerUp));
-  mainCanvas.addEventListener('pointercancel', guard(onPointerUp));
+  mainCanvas.addEventListener('pointercancel', guard(onPointerCancel));
   window.addEventListener('resize', () => {
     clearTimeout(state.resizeTimer);
     state.resizeTimer = setTimeout(() => { safely(() => { sizeMain(); renderAll(); }); }, 120);
