@@ -31,7 +31,7 @@ import {
 /** @typedef {{ nbs: Neighbor[], concerns: Concerns, gaps: Gaps, quietFrom: number, noiseMap: boolean }} Overlay */
 /**
  * @typedef {{ thumb: boolean, width: number, track: Track | null, sim: Sim | null, rings: Rings | null,
- *   overlay: Overlay | null }} YardOpts
+ *   overlay: Overlay | null, ghosts?: Track[] }} YardOpts
  */
 /** @typedef {{ ox: number, oy: number, s: number }} Geo */
 /** @typedef {{ x: number, y: number, r: number }} CircleSpec */
@@ -435,6 +435,23 @@ function drawRingLabel(pen, c, rings) {
   ctx.fillText(String(Math.round(c.r)) + ' ft', px(pen, c.x), py(pen, c.y) + 12);
 }
 
+/** The other layouts for the same circles, as thin faint centerlines. @param {Pen} pen @param {Track[]} list */
+function drawGhosts(pen, list) {
+  check(list.length <= BATCH, 'at most one batch of ghost layouts');
+  const ctx = pen.ctx;
+  ctx.save();
+  ctx.globalAlpha = 0.45; ctx.strokeStyle = pen.col.fg; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+  for (const tr of list) {
+    check(tr.samples.length > 1, 'a ghost layout needs points');
+    ctx.beginPath();
+    tr.samples.forEach((p, i) => {
+      if (i === 0) { ctx.moveTo(px(pen, p.x), py(pen, p.y)); } else { ctx.lineTo(px(pen, p.x), py(pen, p.y)); }
+    });
+    ctx.closePath(); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /** Draws the whole yard; returns where it landed, for turning taps into feet. @param {HTMLCanvasElement} canvas @param {YardOpts} opts @returns {Geo | null} */
 function drawYard(canvas, opts) {
   const pen = makePen(canvas, opts.thumb), ov = opts.overlay;
@@ -445,6 +462,7 @@ function drawYard(canvas, opts) {
   drawFeatures(pen, opts.thumb);
   drawFence(pen);
   if (ov) { drawLabels(pen, ov); }
+  if (opts.ghosts) { drawGhosts(pen, opts.ghosts); }
   if (opts.track) { drawTrack(pen, opts.track, opts); }
   if (opts.rings) { drawRings(pen, opts.rings, opts.thumb); }
   return { ox: pen.ox, oy: pen.oy, s: pen.s };
@@ -571,8 +589,9 @@ function renderMain() {
   const sol = state.drag ? undefined : state.csol[state.csel];
   const tr = sol ? buildCircleTrack(sol.order) : null;
   const sim = tr ? lapSim(tr.samples, quietFrom()) : null;
+  const ghosts = sol ? state.csol.filter((_, i) => i !== state.csel).slice(0, BATCH).map((l) => buildCircleTrack(l.order)) : [];
   state.geo = drawYard(mainCanvas, { thumb: false, width: state.width, track: tr, sim,
-    rings: ringsOpts(state.cpick, hubDirShown()), overlay: overlay() });
+    rings: ringsOpts(state.cpick, hubDirShown()), overlay: overlay(), ghosts });
   setStats(tr, sim);
   renderSelBox();
 }
