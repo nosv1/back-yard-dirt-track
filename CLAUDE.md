@@ -26,7 +26,9 @@ Claude).
   - `src/core.js`: yard data, geometry, solvers, lap sim, noise. No DOM, so tests import it.
   - `src/ui.js`: drawing and controls. `src/page.html`: markup and CSS.
   - `tools/build.mjs` inlines both scripts into `index.html`, because the Claude artifact only runs inline scripts.
-- **Published copy:** the Claude artifact [Backyard Track Lab](https://claude.ai/artifact/KmqdYAXCeA8kawXkiU6kgm). Republish `index.html` there after each change.
+- **Live:** GitHub Pages from `main` / root, [nosv1.github.io/back-yard-dirt-track](https://nosv1.github.io/back-yard-dirt-track/)
+  (on 11-25); every push to main deploys it. The Claude artifact
+  [Backyard Track Lab](https://claude.ai/artifact/KmqdYAXCeA8kawXkiU6kgm) is for previews in a session.
 
 ## Coding standard
 
