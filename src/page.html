@@ -68,6 +68,7 @@ select { font: 13px var(--font-body); padding: 7px 8px; border-radius: 7px; bord
 .save-load b { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .save-load span { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
 .save-load:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
+.ride-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; border-top: 1px solid var(--line); padding-top: 14px; }
 dl.stats dt { font-size: 13px; color: var(--muted); }
 dl.stats dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
@@ -221,6 +222,7 @@ details.more[open] summary { margin-bottom: 12px; }
   </section>
 
   <section class="yard" id="yard" aria-label="Yard plan">
+    <div class="ride-row"><button class="btn primary" id="ride" type="button">Ride a lap</button><span class="hint">A bike rides the selected layout at the simulated speed.</span></div>
     <canvas id="main" width="280" height="760" role="img" aria-label="Plan view of the yard with the current track layout"></canvas>
     <div class="legend">
       <div class="k"><span class="sw" style="background: var(--dirt)"></span>Track, drawn to width</div>

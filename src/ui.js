@@ -34,6 +34,11 @@ import {
  *   overlay: Overlay | null, ghosts?: Track[] }} YardOpts
  */
 /** @typedef {{ ox: number, oy: number, s: number }} Geo */
+/**
+ * A lap being ridden on the main map: a snapshot of the map, the lap, cumulative times, and the animation frame.
+ * @typedef {{ snap: HTMLCanvasElement, tr: Track, sim: Sim, times: Float64Array, t0: number, idx: number,
+ *   raf: number }} Ride
+ */
 /** @typedef {{ x: number, y: number, r: number }} CircleSpec */
 /**
  * @typedef {{ width: number, hubDir: HubDir, rank: Rank, useAll: boolean, gaps: Gaps, concerns: Concerns,
@@ -48,7 +53,8 @@ import {
  * @typedef {{ width: number, geo: Geo | null, circles: Placed[], nextId: number, hub: number, csel: number,
  *   cpick: number, csol: Layout[], cbad: Set<number>, drag: { id: number, dx: number, dy: number } | null,
  *   tap: { w: Pt, sx: number, sy: number } | null, useAll: boolean, rank: Rank, hubDir: HubDir, gaps: Gaps,
- *   noiseMap: boolean, quietDepth: number, concerns: Concerns, resizeTimer: number }} UiState
+ *   noiseMap: boolean, quietDepth: number, concerns: Concerns, resizeTimer: number,
+ *   ride: Ride | null }} UiState
  */
 
 const MAIN_M = Object.freeze({ l: 34, r: 10, t: 40, b: 30 });
@@ -76,7 +82,7 @@ const state = {
   width: 10, geo: null, circles: [], nextId: 1, hub: 0, csel: 0, cpick: -1, csol: [], cbad: new Set(),
   drag: null, tap: null, useAll: false, rank: 'both', hubDir: 'either',
   gaps: { back: 45, north: 30, south: 75 }, noiseMap: true, quietDepth: 100,
-  concerns: { back: 'high', north: 'some', south: 'none' }, resizeTimer: 0,
+  concerns: { back: 'high', north: 'some', south: 'none' }, resizeTimer: 0, ride: null,
 };
 
 /* ---------- DOM access with checks ---------- */
@@ -585,7 +591,92 @@ function renderSelBox() {
   el('make-hub').hidden = c.id === state.hub;
 }
 
+/* ---------- ride a lap ---------- */
+
+const RIDE_LAPS = 20;     // stop on its own after this many laps
+const MS_TO_MPH = 2.23694;
+
+/** Seconds from the start of the lap to each sample. @param {Track} tr @param {Sim} sim */
+function rideTimes(tr, sim) {
+  check(sim.v.length === tr.samples.length, 'sim and track must match');
+  const t = new Float64Array(tr.samples.length + 1);
+  tr.samples.forEach((p, i) => { t[i + 1] = at(t, i) + (p.ds * 0.3048) / Math.max(0.3, at(sim.v, i)); });
+  return t;
+}
+
+/**
+ * A small top-down bike at (x, y) in screen pixels, facing ang radians, with its speed above.
+ * @param {Pen} pen @param {{ x: number, y: number, ang: number, speed: number }} pose
+ */
+function drawBike(pen, pose) {
+  check(Number.isFinite(pose.x) && Number.isFinite(pose.y), 'bike needs a position');
+  const ctx = pen.ctx, L = Math.max(30, 11 * pen.s), x = pose.x, y = pose.y, label = String(pose.speed) + ' mph';
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(pose.ang);
+  ctx.fillStyle = '#1b1b1b';
+  ctx.fillRect(-L / 2, -L * 0.07, L * 0.26, L * 0.14);          // rear wheel
+  ctx.fillRect(L * 0.24, -L * 0.07, L * 0.26, L * 0.14);        // front wheel
+  ctx.fillStyle = pen.col.tape; ctx.fillRect(-L * 0.28, -L * 0.13, L * 0.56, L * 0.26);
+  ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = Math.max(2, L * 0.07);
+  ctx.beginPath(); ctx.moveTo(L * 0.22, -L * 0.28); ctx.lineTo(L * 0.22, L * 0.28); ctx.stroke();   // bars
+  ctx.fillStyle = '#f4f4f4'; ctx.beginPath(); ctx.arc(-L * 0.02, 0, L * 0.13, 0, TAU); ctx.fill(); // helmet
+  ctx.restore();
+  ctx.font = '600 13px "JetBrains Mono", ui-monospace, monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.lineWidth = 3; ctx.strokeStyle = pen.col.bg; ctx.strokeText(label, x, y - L * 0.45);
+  ctx.fillStyle = pen.col.fg; ctx.fillText(label, x, y - L * 0.45);
+}
+
+/** Draws one frame; false once the ride is over. @param {Ride} ride @param {number} now */
+function rideFrame(ride, now) {
+  const geo = state.geo, ctx = mainCanvas.getContext('2d');
+  check(geo !== null && ctx !== null, 'the map must be drawn before riding');
+  const n = ride.tr.samples.length, T = at(ride.times, n), el0 = (now - ride.t0) / 1000;
+  if (el0 / T >= RIDE_LAPS) { return false; }
+  const e = el0 % T;
+  if (e < at(ride.times, ride.idx)) { ride.idx = 0; }
+  while (ride.idx < n - 1 && at(ride.times, ride.idx + 1) <= e) { ride.idx++; }
+  const i = ride.idx, p = at(ride.tr.samples, i), q = at(ride.tr.samples, (i + 1) % n);
+  const f = Math.min(1, (e - at(ride.times, i)) / Math.max(1e-6, at(ride.times, i + 1) - at(ride.times, i)));
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(ride.snap, 0, 0); ctx.restore();
+  const pen = { ctx, s: geo.s, ox: geo.ox, oy: geo.oy, col: palette() };
+  const x = px(pen, p.x + (q.x - p.x) * f), y = py(pen, p.y + (q.y - p.y) * f);
+  drawBike(pen, { x, y, ang: Math.atan2(-(q.y - p.y), q.x - p.x), speed: Math.round(at(ride.sim.v, i) * MS_TO_MPH) });
+  return true;
+}
+
+function stopRide() {
+  if (state.ride) { cancelAnimationFrame(state.ride.raf); }
+  state.ride = null;
+  el('ride').textContent = 'Ride a lap';
+}
+
+function startRide() {
+  if (state.ride) { renderMain(); return; }
+  const sol = state.csol[state.csel];
+  if (!sol) { msg('There is no layout to ride yet.', true); return; }
+  renderMain();
+  const tr = buildCircleTrack(sol.order), sim = lapSim(tr.samples, quietFrom());
+  const snap = document.createElement('canvas'), sctx = snap.getContext('2d');
+  check(sctx !== null, 'canvas 2d is unavailable');
+  snap.width = mainCanvas.width; snap.height = mainCanvas.height; sctx.drawImage(mainCanvas, 0, 0);
+  /** @type {Ride} */
+  const ride = { snap, tr, sim, times: rideTimes(tr, sim), t0: performance.now(), idx: 0, raf: 0 };
+  /** @param {number} now */
+  const tick = (now) => {
+    if (state.ride !== ride) { return; }
+    /** @type {{ more: boolean }} */
+    const r = { more: false };
+    safely(() => { r.more = rideFrame(ride, now); });
+    if (r.more) { ride.raf = requestAnimationFrame(tick); } else { renderMain(); }
+  };
+  state.ride = ride;
+  el('ride').textContent = 'Stop';
+  ride.raf = requestAnimationFrame(tick);
+}
+
 function renderMain() {
+  stopRide();
   const sol = state.drag ? undefined : state.csol[state.csel];
   const tr = sol ? buildCircleTrack(sol.order) : null;
   const sim = tr ? lapSim(tr.samples, quietFrom()) : null;
@@ -929,6 +1020,7 @@ function wireCircles() {
     state.cpick = state.hub; relabel(); solveNow();
   }));
   el('randomize').addEventListener('click', guard(randomize));
+  el('ride').addEventListener('click', guard(startRide));
   el('example').addEventListener('click', guard(() => { loadCircles(EXAMPLE); msg('', false); solveNow(); }));
   el('clear-circles').addEventListener('click', guard(() => { state.circles = []; state.hub = 0; state.cpick = -1; solveNow(); }));
   inputEl('use-all').addEventListener('change', guard(() => { state.useAll = inputEl('use-all').checked; solveNow(); }));

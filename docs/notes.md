@@ -44,3 +44,6 @@ obstacles" caught it.
   straight ahead, +1 dB on the right (pipe side). Both numbers (`NOISE.spread`, `NOISE.side`) are estimates. To
   replace them, measure the real bike with a phone meter at 25 ft: front, back, left, right, at a steady rev.
 - **Overlay:** the other top layouts draw as faint dashed lines under the selected one.
+- **Ride a lap (11-25 evening, his brother's idea):** a top-down bike rides the selected layout in real time at the
+  sim's speed, with mph above it. The map is snapshotted once and only the bike is redrawn each frame; any re-render
+  stops it, and it stops on its own after 20 laps.
